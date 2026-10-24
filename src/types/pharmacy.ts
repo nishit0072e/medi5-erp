@@ -64,3 +64,41 @@ export interface AddMemberInput {
   phone: string;
   role: MembershipRole;
 }
+
+export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  pharmacyId?: string;
+  pharmacyName?: string;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  token: string;
+}
+
+export interface TenantHealthSummary {
+  pharmacyId: string;
+  pharmacyName: string;
+  legalName?: string;
+  city: string;
+  state: string;
+  drugLicenseNumber: string;
+  gstin?: string;
+  ownerName: string;
+  ownerPhone: string;
+  totalSalesVolume: number;
+  totalInvoicesCount: number;
+  totalGrossProfit: number;
+  medicinesCount: number;
+  batchesCount: number;
+  lowStockBatchesCount: number;
+  expiringSoonBatchesCount: number;
+  platformFeeDue: number;
+  systemStatus: 'HEALTHY' | 'WARNING' | 'ALERT';
+}
+

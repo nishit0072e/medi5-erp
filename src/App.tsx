@@ -11,6 +11,9 @@ import { StockLedgerView } from './components/StockLedgerView';
 import { PosScreen } from './components/PosScreen';
 import { SaleReceiptModal } from './components/SaleReceiptModal';
 import { PharmacySettingsView } from './components/PharmacySettingsView';
+import { LoginScreen } from './components/LoginScreen';
+import { SuperAdminPortal } from './components/SuperAdminPortal';
+import { getStoredSession, clearStoredSession } from './utils/authService';
 import { 
   loadDemoInventory, 
   saveDemoInventory, 
@@ -24,7 +27,7 @@ import {
   addPharmacyStaffMember,
   removePharmacyStaffMember
 } from './data/demoRepository';
-import { UpdatePharmacyInput, AddMemberInput } from './types/pharmacy';
+import { UpdatePharmacyInput, AddMemberInput, AuthSession } from './types/pharmacy';
 import { calculateAllSummaries, calculateInventoryKpis } from './utils/inventoryCalculations';
 import { 
   StockFilter, 
@@ -39,14 +42,33 @@ import {
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export const App: React.FC = () => {
+  // 0. Authentication & Multi-Tenant Session State
+  const [session, setSession] = useState<AuthSession | null>(() => getStoredSession());
+  const [inspectingPharmacyId, setInspectingPharmacyId] = useState<string | null>(null);
+
   // 1. Initial State from Versioned Demo Repository
   const [demoState, setDemoState] = useState(() => loadDemoInventory());
   const { medicines, batches, movements, sales = [], pharmacies = [], activePharmacyId = '' } = demoState;
 
-  // Active Pharmacy Tenant
+  // Determine current role & isolated pharmacy context
+  const isSuperAdmin = session?.user.role === 'SUPER_ADMIN';
+
+  // Active Pharmacy Tenant:
+  // - If Super Admin is inspecting a pharmacy: use inspectingPharmacyId or activePharmacyId
+  // - If Tenant is logged in: STRICT TENANT ISOLATION -> use session.user.pharmacyId
+  const effectivePharmacyId = isSuperAdmin
+    ? (inspectingPharmacyId || activePharmacyId || pharmacies[0]?.id)
+    : (session?.user.pharmacyId || activePharmacyId || pharmacies[0]?.id);
+
   const activePharmacy = useMemo(() => {
-    return pharmacies.find((p) => p.id === activePharmacyId) || pharmacies[0];
-  }, [pharmacies, activePharmacyId]);
+    return pharmacies.find((p) => p.id === effectivePharmacyId) || pharmacies[0];
+  }, [pharmacies, effectivePharmacyId]);
+
+  const handleLogout = useCallback(() => {
+    clearStoredSession();
+    setSession(null);
+    setInspectingPharmacyId(null);
+  }, []);
 
   // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'settings')
   const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'settings'>('inventory');
@@ -329,6 +351,30 @@ export const App: React.FC = () => {
     }
   };
 
+  // Unauthenticated Barrier -> Render Login Screen with strict authentication
+  if (!session) {
+    return <LoginScreen onLoginSuccess={(newSession) => setSession(newSession)} />;
+  }
+
+  // Super Admin Platform Command Center (when not actively inspecting a specific store)
+  if (isSuperAdmin && !inspectingPharmacyId) {
+    return (
+      <SuperAdminPortal
+        pharmacies={pharmacies}
+        allMedicines={medicines}
+        allBatches={batches}
+        allSales={sales}
+        allMovements={movements}
+        onInspectPharmacy={(pharmacyId) => {
+          setInspectingPharmacyId(pharmacyId);
+          handleSwitchPharmacy(pharmacyId);
+        }}
+        onLogout={handleLogout}
+        onCreatePharmacy={handleCreatePharmacy}
+      />
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Toast Notification */}
@@ -363,6 +409,10 @@ export const App: React.FC = () => {
         onResetDemo={handleResetDemo}
         ledgerCount={movements.length}
         salesCount={sales.length}
+        currentUser={session.user}
+        onLogout={handleLogout}
+        isSuperAdminInspecting={Boolean(isSuperAdmin && inspectingPharmacyId)}
+        onReturnToSuperAdmin={() => setInspectingPharmacyId(null)}
       />
 
       {/* Aggregate KPI Overview (shown for inventory view) */}
@@ -428,7 +478,8 @@ export const App: React.FC = () => {
         <main className="inventory-list-section" role="region" aria-label="Pharmacy Profile Settings">
           <PharmacySettingsView
             pharmacies={pharmacies}
-            activePharmacyId={activePharmacyId}
+            activePharmacyId={activePharmacy.id}
+            isSuperAdmin={isSuperAdmin}
             onSwitchPharmacy={handleSwitchPharmacy}
             onUpdateProfile={handleUpdatePharmacyProfile}
             onCreatePharmacy={handleCreatePharmacy}

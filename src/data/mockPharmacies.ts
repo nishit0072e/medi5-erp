@@ -89,3 +89,56 @@ export const MOCK_PHARMACIES: PharmacyProfile[] = [
     ]
   }
 ];
+
+export interface MockCredential {
+  email: string;
+  password: string;
+  name: string;
+  role: 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF';
+  pharmacyId?: string;
+  pharmacyName?: string;
+}
+
+export const SUPER_ADMIN_CREDENTIAL: MockCredential = {
+  email: 'admin@medi5.in',
+  password: 'admin',
+  name: 'Platform Super Admin',
+  role: 'SUPER_ADMIN'
+};
+
+export const MOCK_CREDENTIALS: MockCredential[] = [
+  SUPER_ADMIN_CREDENTIAL,
+  {
+    email: 'nandan.owner@nandanpharmacy.in',
+    password: 'password123',
+    name: 'Nandan Sen (Owner)',
+    role: 'OWNER',
+    pharmacyId: 'pharm-nandan-kolkata',
+    pharmacyName: 'Nandan Pharmacy'
+  },
+  {
+    email: 'priya.dispenser@nandanpharmacy.in',
+    password: 'password123',
+    name: 'Priya Das (Staff)',
+    role: 'STAFF',
+    pharmacyId: 'pharm-nandan-kolkata',
+    pharmacyName: 'Nandan Pharmacy'
+  },
+  {
+    email: 'subhash@deshbandhumedical.in',
+    password: 'password123',
+    name: 'Subhash Mukherjee (Owner)',
+    role: 'OWNER',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    pharmacyName: 'Deshbandhu Medical Hall'
+  },
+  {
+    email: 'aniket@deshbandhumedical.in',
+    password: 'password123',
+    name: 'Aniket Roy (Staff)',
+    role: 'STAFF',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    pharmacyName: 'Deshbandhu Medical Hall'
+  }
+];
+

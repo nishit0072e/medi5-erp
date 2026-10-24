@@ -1,5 +1,18 @@
 import React from 'react';
-import { Pill, AlertCircle, Plus, RotateCcw, ListFilter, History, ShoppingCart, Building2 } from 'lucide-react';
+import { 
+  Pill, 
+  AlertCircle, 
+  Plus, 
+  RotateCcw, 
+  ListFilter, 
+  History, 
+  ShoppingCart, 
+  Building2,
+  Crown,
+  LogOut,
+  ArrowRight
+} from 'lucide-react';
+import { AuthUser } from '../types/pharmacy';
 
 interface HeaderProps {
   pharmacyName?: string;
@@ -10,6 +23,10 @@ interface HeaderProps {
   onResetDemo: () => void;
   ledgerCount: number;
   salesCount?: number;
+  currentUser?: AuthUser;
+  onLogout?: () => void;
+  isSuperAdminInspecting?: boolean;
+  onReturnToSuperAdmin?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,10 +37,38 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenReceive,
   onResetDemo,
   ledgerCount,
-  salesCount = 0
+  salesCount = 0,
+  currentUser,
+  onLogout,
+  isSuperAdminInspecting = false,
+  onReturnToSuperAdmin
 }) => {
   return (
     <>
+      {/* Super Admin Inspection Mode Banner */}
+      {isSuperAdminInspecting && (
+        <div className="superadmin-inspect-banner">
+          <div className="inspect-banner-content">
+            <div className="inspect-banner-text">
+              <Crown size={16} className="text-amber-500" />
+              <span>
+                <strong>Super Admin Real-Time Audit:</strong> Viewing <strong>{pharmacyName}</strong> ({location}). Changes directly reflect in platform stats.
+              </span>
+            </div>
+            {onReturnToSuperAdmin && (
+              <button 
+                type="button" 
+                className="btn-return-admin"
+                onClick={onReturnToSuperAdmin}
+              >
+                <span>Return to Platform Command Center</span>
+                <ArrowRight size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <header className="app-header">
         <div className="header-top">
           <div className="brand-wrapper">
@@ -40,13 +85,36 @@ export const Header: React.FC<HeaderProps> = ({
             <button 
               type="button"
               className="pharmacy-badge clickable-badge" 
-              title="Active Tenant Context (Click to manage Profile & Multi-Store Settings)"
+              title="Active Store Profile"
               onClick={() => onViewChange('settings')}
               aria-label="Active Pharmacy Profile Settings"
             >
               <span className="status-dot"></span>
               <span>{pharmacyName} ({location})</span>
             </button>
+
+            {currentUser && (
+              <div className="user-profile-badge">
+                <div className="user-info-text">
+                  <span className="user-display-name">{currentUser.name}</span>
+                  <span className={`user-role-tag role-${currentUser.role.toLowerCase()}`}>
+                    {currentUser.role === 'SUPER_ADMIN' ? 'SUPER ADMIN' : currentUser.role}
+                  </span>
+                </div>
+                {onLogout && (
+                  <button
+                    type="button"
+                    className="btn-signout-header"
+                    onClick={onLogout}
+                    title="Sign Out"
+                    aria-label="Sign Out"
+                  >
+                    <LogOut size={14} />
+                    <span>Sign Out</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             <button
               type="button"

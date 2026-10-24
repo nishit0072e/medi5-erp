@@ -21,6 +21,7 @@ import { PharmacyProfile, UpdatePharmacyInput, AddMemberInput, MembershipRole } 
 interface PharmacySettingsViewProps {
   pharmacies: PharmacyProfile[];
   activePharmacyId: string;
+  isSuperAdmin?: boolean;
   onSwitchPharmacy: (pharmacyId: string) => void;
   onUpdateProfile: (pharmacyId: string, input: UpdatePharmacyInput) => void;
   onCreatePharmacy: (input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }) => void;
@@ -32,6 +33,7 @@ interface PharmacySettingsViewProps {
 export const PharmacySettingsView: React.FC<PharmacySettingsViewProps> = ({
   pharmacies,
   activePharmacyId,
+  isSuperAdmin = false,
   onSwitchPharmacy,
   onUpdateProfile,
   onCreatePharmacy,
@@ -239,13 +241,13 @@ export const PharmacySettingsView: React.FC<PharmacySettingsViewProps> = ({
         )}
       </div>
 
-      {/* Active Tenant Switcher Bar */}
+      {/* Active Tenant Card - Tenant Switcher is restricted strictly to Super Admin */}
       <div className="tenant-selector-card">
         <div className="tenant-selector-header">
           <div className="tenant-current-badge">
             <Store size={18} className="text-primary-green" />
             <div>
-              <span className="tenant-label">ACTIVE PHARMACY TENANT:</span>
+              <span className="tenant-label">{isSuperAdmin ? 'SUPER ADMIN INSPECTION TARGET:' : 'REGISTERED PHARMACY PROFILE:'}</span>
               <div className="tenant-name-row">
                 <span className="tenant-active-name">{activePharmacy.name}</span>
                 <span className="tenant-status-pill">ACTIVE • FORM 20/21</span>
@@ -253,31 +255,33 @@ export const PharmacySettingsView: React.FC<PharmacySettingsViewProps> = ({
             </div>
           </div>
 
-          <div className="tenant-switcher-actions">
-            <span className="text-xs text-muted">Switch Tenant:</span>
-            <div className="tenant-pill-group">
-              {pharmacies.map((p) => (
+          {isSuperAdmin && (
+            <div className="tenant-switcher-actions">
+              <span className="text-xs text-muted">Super Admin Switch Store:</span>
+              <div className="tenant-pill-group">
+                {pharmacies.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`tenant-pill-btn ${p.id === activePharmacy.id ? 'active' : ''}`}
+                    onClick={() => onSwitchPharmacy(p.id)}
+                  >
+                    <span className="tenant-dot"></span>
+                    <span>{p.name} ({p.city})</span>
+                  </button>
+                ))}
                 <button
-                  key={p.id}
                   type="button"
-                  className={`tenant-pill-btn ${p.id === activePharmacy.id ? 'active' : ''}`}
-                  onClick={() => onSwitchPharmacy(p.id)}
+                  className="btn-add-store-pill"
+                  onClick={() => setIsNewStoreOpen(true)}
+                  title="Register a new pharmacy branch"
                 >
-                  <span className="tenant-dot"></span>
-                  <span>{p.name} ({p.city})</span>
+                  <Plus size={14} />
+                  <span>New Store</span>
                 </button>
-              ))}
-              <button
-                type="button"
-                className="btn-add-store-pill"
-                onClick={() => setIsNewStoreOpen(true)}
-                title="Register a new pharmacy branch"
-              >
-                <Plus size={14} />
-                <span>New Store</span>
-              </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
