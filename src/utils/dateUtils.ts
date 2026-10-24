@@ -15,12 +15,22 @@ import { ExpiryUrgency } from '../types/inventory';
  * pointing to the end of the specified calendar day (23:59:59.999).
  */
 export function parseExpiryDate(dateStr: string): Date {
-  const parts = dateStr.trim().split('-');
+  const clean = dateStr.trim();
+  // Support MM/YYYY or MM-YYYY format
+  if (/^\d{1,2}[\/-]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[\/-]/);
+    const month = parseInt(parts[0], 10);
+    const year = parseInt(parts[1], 10);
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    return new Date(year, month - 1, lastDayOfMonth, 23, 59, 59, 999);
+  }
+
+  const parts = clean.split(/[-\/]/);
   const year = parseInt(parts[0], 10);
   const month = parseInt(parts[1], 10); // 1-12
 
   if (parts.length === 2) {
-    // Format: YYYY-MM -> last day of this month (month index in JS is 0-11, so passing month gives day 0 of next month)
+    // Format: YYYY-MM -> last day of this month
     const lastDayOfMonth = new Date(year, month, 0).getDate();
     return new Date(year, month - 1, lastDayOfMonth, 23, 59, 59, 999);
   }
@@ -58,20 +68,37 @@ export function getExpiryUrgency(
  * Formats a date string into human-readable Indian format: "DD MMM YYYY" or "MMM YYYY"
  */
 export function formatDisplayDate(dateStr: string): string {
-  if (!dateStr) return 'N/A';
-  const parts = dateStr.trim().split('-');
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10);
-  
+  if (!dateStr || !dateStr.trim()) return 'N/A';
+  const clean = dateStr.trim();
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthName = monthNames[month - 1] || '';
 
-  if (parts.length === 2) {
+  // Handle MM/YYYY or MM-YYYY format
+  if (/^\d{1,2}[\/-]\d{4}$/.test(clean)) {
+    const [m, y] = clean.split(/[\/-]/);
+    const month = parseInt(m, 10);
+    const year = parseInt(y, 10);
+    const monthName = monthNames[month - 1] || '';
     return `${monthName} ${year}`;
   }
 
-  const day = parseInt(parts[2], 10);
-  return `${day.toString().padStart(2, '0')} ${monthName} ${year}`;
+  // Handle YYYY-MM, YYYY/MM, or YYYY-MM-DD
+  const parts = clean.split(/[-\/]/);
+  if (parts.length >= 2) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const monthName = monthNames[month - 1] || '';
+
+    if (parts.length === 2) {
+      return `${monthName} ${year}`;
+    }
+
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(day)) {
+      return `${day.toString().padStart(2, '0')} ${monthName} ${year}`;
+    }
+  }
+
+  return clean;
 }
 
 /**

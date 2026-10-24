@@ -6,7 +6,7 @@
  * No real patient or proprietary pharmacy data is included.
  */
 
-import { Medicine, MedicineBatch } from '../types/inventory';
+import { Medicine, MedicineBatch, StockMovement } from '../types/inventory';
 
 export const MOCK_MEDICINES: Medicine[] = [
   {
@@ -194,5 +194,92 @@ export const MOCK_BATCHES: MedicineBatch[] = [
     supplierName: 'Bengal Med Distributors (Fictional)',
     status: 'ACTIVE',
     receivedDate: '2026-01-08'
+  }
+];
+
+export const MOCK_MOVEMENTS: StockMovement[] = [
+  {
+    id: 'mov-dolo-01',
+    batchId: 'batch-dolo-01',
+    medicineId: 'med-dolo-650',
+    medicineName: 'Dolo 650',
+    batchNumber: 'SYN-DL-24A',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 100,
+    balanceBefore: 0,
+    balanceAfter: 100,
+    reason: 'Initial purchase from Bengal Med Distributors',
+    timestamp: '2025-06-12T10:30:00.000Z',
+    performedBy: 'Nandan Owner (Demo)'
+  },
+  {
+    id: 'mov-dolo-02',
+    batchId: 'batch-dolo-02',
+    medicineId: 'med-dolo-650',
+    medicineName: 'Dolo 650',
+    batchNumber: 'SYN-DL-25K',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 150,
+    balanceBefore: 0,
+    balanceAfter: 150,
+    reason: 'Restocking purchase from Kolkata Life Sciences',
+    timestamp: '2026-08-20T14:15:00.000Z',
+    performedBy: 'Nandan Owner (Demo)'
+  },
+  {
+    id: 'mov-aug-01',
+    batchId: 'batch-aug-01',
+    medicineId: 'med-augmentin-625',
+    medicineName: 'Augmentin 625 Duo',
+    batchNumber: 'SYN-AG-62X',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 50,
+    balanceBefore: 0,
+    balanceAfter: 50,
+    reason: 'Inbound stock receipt from Apex Pharma',
+    timestamp: '2026-02-14T11:00:00.000Z',
+    performedBy: 'Nandan Owner (Demo)'
+  },
+  {
+    id: 'mov-cet-01',
+    batchId: 'batch-cet-exp',
+    medicineId: 'med-cetirizine-10',
+    medicineName: 'Cetzine 10',
+    batchNumber: 'SYN-CT-EXP01',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 60,
+    balanceBefore: 0,
+    balanceAfter: 60,
+    reason: 'Purchase receipt',
+    timestamp: '2025-01-10T09:45:00.000Z',
+    performedBy: 'Nandan Owner (Demo)'
+  },
+  {
+    id: 'mov-cet-exp-adj',
+    batchId: 'batch-cet-exp',
+    medicineId: 'med-cetirizine-10',
+    medicineName: 'Cetzine 10',
+    batchNumber: 'SYN-CT-EXP01',
+    movementType: 'EXPIRED_WRITE_OFF',
+    quantityChange: -45,
+    balanceBefore: 60,
+    balanceAfter: 15,
+    reason: 'Dispensed historical stock prior to August 2026 expiry',
+    timestamp: '2026-08-30T17:00:00.000Z',
+    performedBy: 'Subhas Staff (Demo)'
+  },
+  {
+    id: 'mov-cet-02',
+    batchId: 'batch-cet-active',
+    medicineId: 'med-cetirizine-10',
+    medicineName: 'Cetzine 10',
+    batchNumber: 'SYN-CT-25B',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 80,
+    balanceBefore: 0,
+    balanceAfter: 80,
+    reason: 'Fresh batch receipt from Hooghly Pharma',
+    timestamp: '2026-05-04T12:20:00.000Z',
+    performedBy: 'Nandan Owner (Demo)'
   }
 ];

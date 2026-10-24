@@ -8,21 +8,24 @@ import {
   Building2, 
   Zap, 
   ShieldAlert,
-  Layers
+  Layers,
+  SlidersHorizontal
 } from 'lucide-react';
-import { MedicineInventorySummary } from '../types/inventory';
+import { MedicineInventorySummary, BatchRecord, Medicine } from '../types/inventory';
 import { formatDisplayDate, formatExpiryBadge, formatINR } from '../utils/dateUtils';
 
 interface MedicineCardProps {
   summary: MedicineInventorySummary;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onOpenAdjust?: (batch: BatchRecord, medicine: Medicine) => void;
 }
 
 export const MedicineCard: React.FC<MedicineCardProps> = ({
   summary,
   isExpanded,
-  onToggleExpand
+  onToggleExpand,
+  onOpenAdjust
 }) => {
   const { medicine, batches, saleableQuantity, totalQuantity, expiredQuantity, isLowStock, isOutOfStock } = summary;
 
@@ -189,9 +192,26 @@ export const MedicineCard: React.FC<MedicineCardProps> = ({
                   </div>
                 </div>
 
-                <div className="batch-supplier">
-                  <Building2 size={12} />
-                  <span>Supplier: {batch.supplierName}</span>
+                <div className="batch-footer-row">
+                  <div className="batch-supplier">
+                    <Building2 size={12} />
+                    <span>Supplier: {batch.supplierName}</span>
+                  </div>
+
+                  {onOpenAdjust && (
+                    <button
+                      type="button"
+                      className="btn-batch-adjust"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenAdjust(batch, medicine);
+                      }}
+                      title={`Adjust or write off units from Batch ${batch.batchNumber}`}
+                    >
+                      <SlidersHorizontal size={11} />
+                      <span>Adjust / Write-off</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );

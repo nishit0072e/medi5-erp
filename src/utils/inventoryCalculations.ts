@@ -46,13 +46,15 @@ export function calculateMedicineSummary(
     } else if (batch.status === 'QUARANTINED') {
       quarantinedQuantity += qty;
     } else if (batch.status === 'ACTIVE') {
-      // Saleable stock
-      saleableQuantity += qty;
-      totalSaleableCost += qty * batch.purchaseCost;
-      eligibleBatches.push(batch);
+      if (qty > 0) {
+        // Saleable stock with units remaining
+        saleableQuantity += qty;
+        totalSaleableCost += qty * batch.purchaseCost;
+        eligibleBatches.push(batch);
 
-      if (urgency === 'EXPIRING_SOON') {
-        hasExpiringSoonBatches = true;
+        if (urgency === 'EXPIRING_SOON') {
+          hasExpiringSoonBatches = true;
+        }
       }
     }
   }
