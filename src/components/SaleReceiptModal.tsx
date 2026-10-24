@@ -1,10 +1,12 @@
 import React from 'react';
 import { X, Printer, CheckCircle2, AlertCircle, ShoppingBag, ArrowRight } from 'lucide-react';
 import { SaleRecord } from '../types/inventory';
+import { PharmacyProfile } from '../types/pharmacy';
 import { formatDisplayDate } from '../utils/dateUtils';
 
 interface SaleReceiptModalProps {
   sale: SaleRecord | null;
+  pharmacy?: PharmacyProfile;
   isOpen: boolean;
   onClose: () => void;
   onNewSale?: () => void;
@@ -12,6 +14,7 @@ interface SaleReceiptModalProps {
 
 export const SaleReceiptModal: React.FC<SaleReceiptModalProps> = ({
   sale,
+  pharmacy,
   isOpen,
   onClose,
   onNewSale
@@ -59,9 +62,20 @@ export const SaleReceiptModal: React.FC<SaleReceiptModalProps> = ({
         <div className="receipt-paper" id="printable-receipt">
           {/* Pharmacy Store Header */}
           <div className="receipt-store-header">
-            <h3 className="store-name">Nandan Pharmacy</h3>
+            <h3 className="store-name">{pharmacy?.name || 'Nandan Pharmacy'}</h3>
+            {pharmacy?.legalName && (
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({pharmacy.legalName})</p>
+            )}
             <p className="store-sub">Retail Chemist & Druggist</p>
-            <p className="store-address">Kolkata, West Bengal • Ph: +91 98300 00000</p>
+            <p className="store-address">
+              {pharmacy ? `${pharmacy.addressLine1}, ${pharmacy.city}, ${pharmacy.state} - ${pharmacy.pincode}` : 'Kolkata, West Bengal'} • Ph: {pharmacy?.phone || '+91 98300 00000'}
+            </p>
+            <div className="receipt-license-info" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              <span>DL No: <strong>{pharmacy?.drugLicenseNumber || 'WB-KOL-20B-184920'}</strong></span>
+              {pharmacy?.gstin && (
+                <span> • GSTIN: <strong>{pharmacy.gstin}</strong></span>
+              )}
+            </div>
             <div className="receipt-badge-pill">WALK-IN COUNTER SALE MEMO</div>
           </div>
 

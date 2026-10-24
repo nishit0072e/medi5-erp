@@ -1,11 +1,11 @@
 import React from 'react';
-import { Pill, AlertCircle, Plus, RotateCcw, ListFilter, History, ShoppingCart } from 'lucide-react';
+import { Pill, AlertCircle, Plus, RotateCcw, ListFilter, History, ShoppingCart, Building2 } from 'lucide-react';
 
 interface HeaderProps {
   pharmacyName?: string;
   location?: string;
-  activeView: 'inventory' | 'pos' | 'ledger';
-  onViewChange: (view: 'inventory' | 'pos' | 'ledger') => void;
+  activeView: 'inventory' | 'pos' | 'ledger' | 'settings';
+  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'settings') => void;
   onOpenReceive: () => void;
   onResetDemo: () => void;
   ledgerCount: number;
@@ -37,10 +37,16 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="header-actions-group">
-            <div className="pharmacy-badge" title="Active Tenant Context">
+            <button 
+              type="button"
+              className="pharmacy-badge clickable-badge" 
+              title="Active Tenant Context (Click to manage Profile & Multi-Store Settings)"
+              onClick={() => onViewChange('settings')}
+              aria-label="Active Pharmacy Profile Settings"
+            >
               <span className="status-dot"></span>
               <span>{pharmacyName} ({location})</span>
-            </div>
+            </button>
 
             <button
               type="button"
@@ -89,6 +95,17 @@ export const Header: React.FC<HeaderProps> = ({
             <History size={15} />
             <span>Stock Ledger</span>
             <span className="tab-count-badge">{ledgerCount}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'settings'}
+            className={`view-tab-btn ${activeView === 'settings' ? 'active' : ''}`}
+            onClick={() => onViewChange('settings')}
+          >
+            <Building2 size={15} />
+            <span>Pharmacy Profile</span>
           </button>
         </div>
       </header>

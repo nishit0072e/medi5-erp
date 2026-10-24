@@ -48,11 +48,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       </button>
 
       <button
-        className={`nav-item disabled`}
+        className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
         type="button"
-        title="Pharmacy Settings will be built in Phase 2"
-        aria-disabled="true"
-        onClick={() => alert('Multi-tenant Pharmacy Profile Settings is part of Phase 2.')}
+        onClick={() => onTabChange('settings')}
+        aria-label="Pharmacy Settings Tab"
       >
         <Settings size={20} />
         <span>Settings</span>

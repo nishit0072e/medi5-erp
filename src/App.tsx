@@ -10,14 +10,21 @@ import { AdjustStockModal } from './components/AdjustStockModal';
 import { StockLedgerView } from './components/StockLedgerView';
 import { PosScreen } from './components/PosScreen';
 import { SaleReceiptModal } from './components/SaleReceiptModal';
+import { PharmacySettingsView } from './components/PharmacySettingsView';
 import { 
   loadDemoInventory, 
   saveDemoInventory, 
   resetDemoInventory, 
   processStockReceipt, 
   processStockAdjustment,
-  processSaleCheckout
+  processSaleCheckout,
+  updatePharmacyProfile,
+  switchPharmacyTenant,
+  createPharmacyTenant,
+  addPharmacyStaffMember,
+  removePharmacyStaffMember
 } from './data/demoRepository';
+import { UpdatePharmacyInput, AddMemberInput } from './types/pharmacy';
 import { calculateAllSummaries, calculateInventoryKpis } from './utils/inventoryCalculations';
 import { 
   StockFilter, 
@@ -34,10 +41,15 @@ import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 export const App: React.FC = () => {
   // 1. Initial State from Versioned Demo Repository
   const [demoState, setDemoState] = useState(() => loadDemoInventory());
-  const { medicines, batches, movements, sales = [] } = demoState;
+  const { medicines, batches, movements, sales = [], pharmacies = [], activePharmacyId = '' } = demoState;
 
-  // 2. Navigation & View State ('inventory' | 'pos' | 'ledger')
-  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger'>('inventory');
+  // Active Pharmacy Tenant
+  const activePharmacy = useMemo(() => {
+    return pharmacies.find((p) => p.id === activePharmacyId) || pharmacies[0];
+  }, [pharmacies, activePharmacyId]);
+
+  // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'settings')
+  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'settings'>('inventory');
   const [activeTab, setActiveTab] = useState<'inventory' | 'patients' | 'analytics' | 'settings'>('inventory');
 
   // 3. Search & Filters for Inventory View
@@ -265,6 +277,58 @@ export const App: React.FC = () => {
     }
   };
 
+  // Pharmacy Profile & Tenant Management (Phase 2)
+  const handleUpdatePharmacyProfile = (pharmacyId: string, input: UpdatePharmacyInput) => {
+    try {
+      const nextState = updatePharmacyProfile(demoState, pharmacyId, input);
+      setDemoState(nextState);
+      showToast('success', 'Pharmacy profile and legal details updated successfully.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to update pharmacy profile.');
+    }
+  };
+
+  const handleSwitchPharmacy = (pharmacyId: string) => {
+    try {
+      const nextState = switchPharmacyTenant(demoState, pharmacyId);
+      setDemoState(nextState);
+      const target = nextState.pharmacies.find((p) => p.id === pharmacyId);
+      showToast('success', `Switched active tenant to ${target?.name || 'selected pharmacy'}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to switch pharmacy.');
+    }
+  };
+
+  const handleCreatePharmacy = (input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }) => {
+    try {
+      const nextState = createPharmacyTenant(demoState, input);
+      setDemoState(nextState);
+      showToast('success', `Created and activated new pharmacy branch "${input.name}".`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to register pharmacy.');
+    }
+  };
+
+  const handleAddStaffMember = (pharmacyId: string, input: AddMemberInput) => {
+    try {
+      const nextState = addPharmacyStaffMember(demoState, pharmacyId, input);
+      setDemoState(nextState);
+      showToast('success', `Added ${input.name} (${input.role}) to staff list.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to add staff member.');
+    }
+  };
+
+  const handleRemoveStaffMember = (pharmacyId: string, memberId: string) => {
+    try {
+      const nextState = removePharmacyStaffMember(demoState, pharmacyId, memberId);
+      setDemoState(nextState);
+      showToast('success', 'Staff member removed.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to remove member.');
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Toast Notification */}
@@ -287,10 +351,14 @@ export const App: React.FC = () => {
 
       {/* Brand Header, Tenant Badge, View Tabs & Demo Banner */}
       <Header 
-        pharmacyName="Nandan Pharmacy" 
-        location="Kolkata, WB"
+        pharmacyName={activePharmacy?.name || 'Nandan Pharmacy'} 
+        location={activePharmacy ? `${activePharmacy.city}, ${activePharmacy.state}` : 'Kolkata, WB'}
         activeView={activeView}
-        onViewChange={setActiveView}
+        onViewChange={(view) => {
+          setActiveView(view);
+          if (view === 'inventory') setActiveTab('inventory');
+          if (view === 'settings') setActiveTab('settings');
+        }}
         onOpenReceive={() => setIsReceiveOpen(true)}
         onResetDemo={handleResetDemo}
         ledgerCount={movements.length}
@@ -306,7 +374,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* MAIN VIEW AREA: INVENTORY, POS COUNTER OR STOCK LEDGER */}
+      {/* MAIN VIEW AREA: INVENTORY, POS COUNTER, STOCK LEDGER OR SETTINGS */}
       {activeView === 'inventory' ? (
         <>
           {/* Search Input & Filter Pills */}
@@ -355,6 +423,23 @@ export const App: React.FC = () => {
             }}
           />
         </main>
+      ) : activeView === 'settings' ? (
+        /* Multi-tenant Pharmacy Profile & Settings View (Phase 2) */
+        <main className="inventory-list-section" role="region" aria-label="Pharmacy Profile Settings">
+          <PharmacySettingsView
+            pharmacies={pharmacies}
+            activePharmacyId={activePharmacyId}
+            onSwitchPharmacy={handleSwitchPharmacy}
+            onUpdateProfile={handleUpdatePharmacyProfile}
+            onCreatePharmacy={handleCreatePharmacy}
+            onAddMember={handleAddStaffMember}
+            onRemoveMember={handleRemoveStaffMember}
+            onBackToInventory={() => {
+              setActiveView('inventory');
+              setActiveTab('inventory');
+            }}
+          />
+        </main>
       ) : (
         /* Stock Movement Ledger View */
         <main className="inventory-list-section" role="region" aria-label="Auditable Stock Ledger">
@@ -372,6 +457,8 @@ export const App: React.FC = () => {
           setActiveTab(tab);
           if (tab === 'inventory') {
             setActiveView('inventory');
+          } else if (tab === 'settings') {
+            setActiveView('settings');
           }
         }} 
         inventoryCount={filteredSummaries.length}
@@ -404,6 +491,7 @@ export const App: React.FC = () => {
         <SaleReceiptModal
           isOpen={isReceiptOpen}
           sale={selectedReceiptSale}
+          pharmacy={activePharmacy}
           onClose={() => {
             setIsReceiptOpen(false);
             setSelectedReceiptSale(null);

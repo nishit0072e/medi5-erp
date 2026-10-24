@@ -21,7 +21,9 @@ import {
   ProcessSaleInput,
   SaleItemSummary
 } from '../types/inventory';
+import { PharmacyProfile, UpdatePharmacyInput, AddMemberInput, PharmacyMember } from '../types/pharmacy';
 import { MOCK_MEDICINES, MOCK_BATCHES, MOCK_MOVEMENTS } from './mockInventory';
+import { MOCK_PHARMACIES } from './mockPharmacies';
 import { parseExpiryDate } from '../utils/dateUtils';
 import { toPaise, fromPaise } from '../utils/moneyUtils';
 import { calculateCartAllocations } from '../utils/fefoAllocation';
@@ -35,6 +37,8 @@ export interface StoredDemoData {
   batches: MedicineBatch[];
   movements: StockMovement[];
   sales?: SaleRecord[];
+  pharmacies?: PharmacyProfile[];
+  activePharmacyId?: string;
   lastUpdated: string;
 }
 
@@ -43,6 +47,8 @@ export interface InventoryState {
   batches: MedicineBatch[];
   movements: StockMovement[];
   sales: SaleRecord[];
+  pharmacies: PharmacyProfile[];
+  activePharmacyId: string;
 }
 
 /**
@@ -54,7 +60,9 @@ export function loadDemoInventory(): InventoryState {
       medicines: [...MOCK_MEDICINES],
       batches: [...MOCK_BATCHES],
       movements: [...MOCK_MOVEMENTS],
-      sales: []
+      sales: [],
+      pharmacies: JSON.parse(JSON.stringify(MOCK_PHARMACIES)),
+      activePharmacyId: MOCK_PHARMACIES[0].id
     };
   }
 
@@ -145,11 +153,21 @@ export function loadDemoInventory(): InventoryState {
         )
       : [];
 
+    // Validate or default pharmacies
+    const pharmacies = Array.isArray(parsed.pharmacies) && parsed.pharmacies.length > 0
+      ? parsed.pharmacies
+      : JSON.parse(JSON.stringify(MOCK_PHARMACIES));
+    const activePharmacyId = typeof parsed.activePharmacyId === 'string' && pharmacies.some((p: PharmacyProfile) => p.id === parsed.activePharmacyId)
+      ? parsed.activePharmacyId
+      : pharmacies[0].id;
+
     return {
       medicines: parsed.medicines,
       batches: parsed.batches,
       movements: parsed.movements,
-      sales: validSales
+      sales: validSales,
+      pharmacies,
+      activePharmacyId
     };
   } catch (err) {
     console.error('[Medi5 Demo Repository] Failed to load localStorage demo data:', err);
@@ -175,6 +193,8 @@ export function saveDemoInventory(state: InventoryState): boolean {
       batches: state.batches,
       movements: state.movements,
       sales: state.sales || [],
+      pharmacies: state.pharmacies || [],
+      activePharmacyId: state.activePharmacyId || (MOCK_PHARMACIES[0]?.id ?? ''),
       lastUpdated: new Date().toISOString()
     };
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(payload));
@@ -206,7 +226,9 @@ export function getInitialSeedState(): InventoryState {
     medicines: JSON.parse(JSON.stringify(MOCK_MEDICINES)),
     batches: JSON.parse(JSON.stringify(MOCK_BATCHES)),
     movements: JSON.parse(JSON.stringify(MOCK_MOVEMENTS)),
-    sales: []
+    sales: [],
+    pharmacies: JSON.parse(JSON.stringify(MOCK_PHARMACIES)),
+    activePharmacyId: MOCK_PHARMACIES[0].id
   };
 }
 
@@ -396,7 +418,9 @@ export function processStockReceipt(
     medicines,
     batches,
     movements: [newMovement, ...currentState.movements],
-    sales: currentState.sales || []
+    sales: currentState.sales || [],
+    pharmacies: currentState.pharmacies || [],
+    activePharmacyId: currentState.activePharmacyId || ''
   };
 
   return {
@@ -485,7 +509,9 @@ export function processStockAdjustment(
     medicines: currentState.medicines,
     batches,
     movements: [newMovement, ...currentState.movements],
-    sales: currentState.sales || []
+    sales: currentState.sales || [],
+    pharmacies: currentState.pharmacies || [],
+    activePharmacyId: currentState.activePharmacyId || ''
   };
 
   return {
@@ -724,12 +750,215 @@ export function processSaleCheckout(
     medicines: currentState.medicines,
     batches: updatedBatches,
     movements: [...newMovements, ...currentState.movements],
-    sales: [newSale, ...existingSales]
+    sales: [newSale, ...existingSales],
+    pharmacies: currentState.pharmacies || [],
+    activePharmacyId: currentState.activePharmacyId || ''
   };
 
   return {
     nextState,
     sale: newSale,
     movements: newMovements
+  };
+}
+
+/**
+ * Updates an existing pharmacy profile's legal details, address, and operational thresholds.
+ */
+export function updatePharmacyProfile(
+  currentState: InventoryState,
+  pharmacyId: string,
+  input: UpdatePharmacyInput
+): InventoryState {
+  const pharmacies = [...currentState.pharmacies];
+  const index = pharmacies.findIndex((p) => p.id === pharmacyId);
+  if (index < 0) {
+    throw new Error(`Pharmacy with ID "${pharmacyId}" not found.`);
+  }
+
+  if (!input.name || !input.name.trim()) {
+    throw new Error('Pharmacy name cannot be empty.');
+  }
+  if (!input.drugLicenseNumber || !input.drugLicenseNumber.trim()) {
+    throw new Error('Drug License Number (Form 20/21) is required.');
+  }
+  if (!input.city || !input.city.trim()) {
+    throw new Error('City is required.');
+  }
+  if (!input.phone || !input.phone.trim()) {
+    throw new Error('Contact phone number is required.');
+  }
+
+  const existing = pharmacies[index];
+  const updated: PharmacyProfile = {
+    ...existing,
+    name: input.name.trim(),
+    legalName: input.legalName ? input.legalName.trim() : input.name.trim(),
+    drugLicenseNumber: input.drugLicenseNumber.trim().toUpperCase(),
+    gstin: input.gstin ? input.gstin.trim().toUpperCase() : undefined,
+    addressLine1: input.addressLine1.trim(),
+    addressLine2: input.addressLine2 ? input.addressLine2.trim() : undefined,
+    city: input.city.trim(),
+    state: input.state ? input.state.trim() : 'West Bengal',
+    pincode: input.pincode.trim(),
+    phone: input.phone.trim(),
+    email: input.email.trim(),
+    expiryThresholdDays: Math.max(1, input.expiryThresholdDays || 60),
+    lowStockThresholdDefault: Math.max(1, input.lowStockThresholdDefault || 15),
+    updatedAt: new Date().toISOString()
+  };
+
+  pharmacies[index] = updated;
+
+  return {
+    ...currentState,
+    pharmacies
+  };
+}
+
+/**
+ * Switches the active pharmacy tenant context in the application.
+ */
+export function switchPharmacyTenant(
+  currentState: InventoryState,
+  targetPharmacyId: string
+): InventoryState {
+  const target = currentState.pharmacies.find((p) => p.id === targetPharmacyId);
+  if (!target) {
+    throw new Error(`Target pharmacy tenant "${targetPharmacyId}" does not exist.`);
+  }
+
+  return {
+    ...currentState,
+    activePharmacyId: targetPharmacyId
+  };
+}
+
+/**
+ * Creates and registers a new pharmacy tenant in the system.
+ */
+export function createPharmacyTenant(
+  currentState: InventoryState,
+  input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }
+): InventoryState {
+  if (!input.name || !input.name.trim()) {
+    throw new Error('Pharmacy name is required.');
+  }
+
+  const slug = input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 16);
+  const newId = `pharm-${slug}-${Date.now().toString().slice(-4)}`;
+
+  const newPharmacy: PharmacyProfile = {
+    id: newId,
+    name: input.name.trim(),
+    legalName: input.legalName ? input.legalName.trim() : input.name.trim(),
+    drugLicenseNumber: input.drugLicenseNumber.trim().toUpperCase(),
+    gstin: input.gstin ? input.gstin.trim().toUpperCase() : undefined,
+    addressLine1: input.addressLine1.trim(),
+    addressLine2: input.addressLine2 ? input.addressLine2.trim() : undefined,
+    city: input.city.trim(),
+    state: input.state ? input.state.trim() : 'West Bengal',
+    pincode: input.pincode.trim(),
+    phone: input.phone.trim(),
+    email: input.email.trim(),
+    currency: 'INR',
+    expiryThresholdDays: Math.max(1, input.expiryThresholdDays || 60),
+    lowStockThresholdDefault: Math.max(1, input.lowStockThresholdDefault || 15),
+    status: 'ACTIVE',
+    updatedAt: new Date().toISOString(),
+    members: [
+      {
+        id: `user-owner-${Date.now().toString().slice(-4)}`,
+        name: input.ownerName.trim() || 'Store Owner',
+        email: input.ownerEmail.trim() || input.email.trim(),
+        phone: input.ownerPhone.trim() || input.phone.trim(),
+        role: 'OWNER',
+        status: 'ACTIVE',
+        joinedDate: new Date().toISOString().split('T')[0]
+      }
+    ]
+  };
+
+  const pharmacies = [...currentState.pharmacies, newPharmacy];
+
+  return {
+    ...currentState,
+    pharmacies,
+    activePharmacyId: newPharmacy.id
+  };
+}
+
+/**
+ * Adds an authorized staff member or manager to a pharmacy tenant.
+ */
+export function addPharmacyStaffMember(
+  currentState: InventoryState,
+  pharmacyId: string,
+  input: AddMemberInput
+): InventoryState {
+  const pharmacies = [...currentState.pharmacies];
+  const pIndex = pharmacies.findIndex((p) => p.id === pharmacyId);
+  if (pIndex < 0) throw new Error('Pharmacy tenant not found.');
+
+  if (!input.name || !input.name.trim()) throw new Error('Staff member name is required.');
+  if (!input.phone || !input.phone.trim()) throw new Error('Staff phone number is required.');
+
+  const pharmacy = pharmacies[pIndex];
+  const newMember: PharmacyMember = {
+    id: `user-${Date.now().toString().slice(-4)}-${Math.random().toString(36).slice(2, 5)}`,
+    name: input.name.trim(),
+    email: input.email ? input.email.trim() : `${input.name.toLowerCase().replace(/\s+/g, '.')}@pharmacy.in`,
+    phone: input.phone.trim(),
+    role: input.role || 'STAFF',
+    status: 'ACTIVE',
+    joinedDate: new Date().toISOString().split('T')[0]
+  };
+
+  pharmacies[pIndex] = {
+    ...pharmacy,
+    members: [...pharmacy.members, newMember],
+    updatedAt: new Date().toISOString()
+  };
+
+  return {
+    ...currentState,
+    pharmacies
+  };
+}
+
+/**
+ * Removes a staff member while strictly enforcing the last-active-owner invariant.
+ */
+export function removePharmacyStaffMember(
+  currentState: InventoryState,
+  pharmacyId: string,
+  memberId: string
+): InventoryState {
+  const pharmacies = [...currentState.pharmacies];
+  const pIndex = pharmacies.findIndex((p) => p.id === pharmacyId);
+  if (pIndex < 0) throw new Error('Pharmacy tenant not found.');
+
+  const pharmacy = pharmacies[pIndex];
+  const targetMember = pharmacy.members.find((m) => m.id === memberId);
+  if (!targetMember) throw new Error('Member not found.');
+
+  if (targetMember.role === 'OWNER') {
+    const remainingActiveOwners = pharmacy.members.filter(
+      (m) => m.role === 'OWNER' && m.status === 'ACTIVE' && m.id !== memberId
+    );
+    if (remainingActiveOwners.length === 0) {
+      throw new Error('Tenancy security violation: A pharmacy must retain at least one active OWNER.');
+    }
+  }
+
+  pharmacies[pIndex] = {
+    ...pharmacy,
+    members: pharmacy.members.filter((m) => m.id !== memberId),
+    updatedAt: new Date().toISOString()
+  };
+
+  return {
+    ...currentState,
+    pharmacies
   };
 }
