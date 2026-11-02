@@ -11,6 +11,7 @@ import { Medicine, MedicineBatch, StockMovement } from '../types/inventory';
 export const MOCK_MEDICINES: Medicine[] = [
   {
     id: 'med-dolo-650',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Dolo 650',
     genericName: 'Paracetamol',
     strength: '650 mg',
@@ -22,6 +23,7 @@ export const MOCK_MEDICINES: Medicine[] = [
   },
   {
     id: 'med-augmentin-625',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Augmentin 625 Duo',
     genericName: 'Amoxicillin + Clavulanic Acid',
     strength: '500mg + 125mg',
@@ -33,6 +35,7 @@ export const MOCK_MEDICINES: Medicine[] = [
   },
   {
     id: 'med-cetirizine-10',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Cetzine 10',
     genericName: 'Cetirizine Hydrochloride',
     strength: '10 mg',
@@ -44,6 +47,7 @@ export const MOCK_MEDICINES: Medicine[] = [
   },
   {
     id: 'med-azithral-500',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Azithral 500',
     genericName: 'Azithromycin',
     strength: '500 mg',
@@ -55,6 +59,7 @@ export const MOCK_MEDICINES: Medicine[] = [
   },
   {
     id: 'med-pantocid-dsr',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Pantocid DSR',
     genericName: 'Pantoprazole + Domperidone',
     strength: '40mg + 30mg',
@@ -66,6 +71,7 @@ export const MOCK_MEDICINES: Medicine[] = [
   },
   {
     id: 'med-glycomet-500',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Glycomet 500 SR',
     genericName: 'Metformin Hydrochloride',
     strength: '500 mg',
@@ -74,6 +80,46 @@ export const MOCK_MEDICINES: Medicine[] = [
     category: 'Anti-Diabetic',
     lowStockThreshold: 30,
     notes: 'Chronic refill medicine for type 2 diabetes'
+  },
+
+  // ==========================================================================
+  // Deshbandhu Medical Hall (pharm-deshbandhu-siliguri) — isolated tenant seed
+  // ==========================================================================
+  {
+    id: 'med-desh-atorva-10',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    name: 'Atorva 10',
+    genericName: 'Atorvastatin Calcium',
+    strength: '10 mg',
+    dosageForm: 'Tablet',
+    unitLabel: 'Strips (15 tabs)',
+    category: 'Cardiovascular / Lipid Lowering',
+    lowStockThreshold: 20,
+    notes: 'Synthetic tenant-isolation fixture'
+  },
+  {
+    id: 'med-desh-shelcal-500',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    name: 'Shelcal 500',
+    genericName: 'Calcium Carbonate + Vitamin D3',
+    strength: '500mg + 250IU',
+    dosageForm: 'Tablet',
+    unitLabel: 'Strips (15 tabs)',
+    category: 'Nutritional Supplement',
+    lowStockThreshold: 25,
+    notes: 'Synthetic tenant-isolation fixture'
+  },
+  {
+    id: 'med-desh-zincovit',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    name: 'Zincovit',
+    genericName: 'Multivitamin + Zinc',
+    strength: 'Multivitamin',
+    dosageForm: 'Tablet',
+    unitLabel: 'Strips (15 tabs)',
+    category: 'Multivitamin',
+    lowStockThreshold: 15,
+    notes: 'Synthetic tenant-isolation fixture'
   }
 ];
 
@@ -82,6 +128,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   // Demonstrates FEFO sorting and multi-batch tracking.
   {
     id: 'batch-dolo-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-dolo-650',
     batchNumber: 'SYN-DL-24A',
     expiryDate: '2026-11-30', // Expiring soon (~44 days from Oct 17)
@@ -95,6 +142,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   },
   {
     id: 'batch-dolo-02',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-dolo-650',
     batchNumber: 'SYN-DL-25K',
     expiryDate: '2027-12-31', // Far future expiry
@@ -110,6 +158,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   // 2. Augmentin 625: Low stock (saleable: 6 strips, threshold: 15 strips)
   {
     id: 'batch-aug-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-augmentin-625',
     batchNumber: 'SYN-AG-62X',
     expiryDate: '2027-05-31',
@@ -126,6 +175,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   // Demonstrates that the expired batch is excluded from saleable quantity!
   {
     id: 'batch-cet-exp',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-cetirizine-10',
     batchNumber: 'SYN-CT-EXP01',
     expiryDate: '2026-08-31', // Already expired!
@@ -139,6 +189,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   },
   {
     id: 'batch-cet-active',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-cetirizine-10',
     batchNumber: 'SYN-CT-25B',
     expiryDate: '2027-09-30',
@@ -154,6 +205,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   // 4. Azithral 500: Future expiry, good healthy stock
   {
     id: 'batch-azi-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-azithral-500',
     batchNumber: 'SYN-AZ-99F',
     expiryDate: '2028-03-31',
@@ -169,6 +221,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   // 5. Pantocid DSR: Single batch, medium stock
   {
     id: 'batch-panto-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-pantocid-dsr',
     batchNumber: 'SYN-PAN-88D',
     expiryDate: '2027-08-31',
@@ -184,6 +237,7 @@ export const MOCK_BATCHES: MedicineBatch[] = [
   // 6. Glycomet 500 SR: Out of stock (0 remaining) to test out-of-stock badge & filtering
   {
     id: 'batch-glyco-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     medicineId: 'med-glycomet-500',
     batchNumber: 'SYN-GLY-01',
     expiryDate: '2027-01-31',
@@ -194,12 +248,57 @@ export const MOCK_BATCHES: MedicineBatch[] = [
     supplierName: 'Bengal Med Distributors (Fictional)',
     status: 'ACTIVE',
     receivedDate: '2026-01-08'
+  },
+
+  // Deshbandhu Medical Hall isolated tenant batches
+  {
+    id: 'batch-desh-atorva-01',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    medicineId: 'med-desh-atorva-10',
+    batchNumber: 'DSH-ATV-26A',
+    expiryDate: '2027-06-30',
+    purchaseCost: 42.00,
+    mrp: 58.00,
+    quantityReceived: 90,
+    quantityRemaining: 72,
+    supplierName: 'North Bengal Pharma Distributors (Fictional)',
+    status: 'ACTIVE',
+    receivedDate: '2026-03-12'
+  },
+  {
+    id: 'batch-desh-shelcal-01',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    medicineId: 'med-desh-shelcal-500',
+    batchNumber: 'DSH-SHL-26B',
+    expiryDate: '2028-02-29',
+    purchaseCost: 78.00,
+    mrp: 98.00,
+    quantityReceived: 60,
+    quantityRemaining: 44,
+    supplierName: 'Himalayan Health Supplies (Fictional)',
+    status: 'ACTIVE',
+    receivedDate: '2026-05-18'
+  },
+  {
+    id: 'batch-desh-zincovit-01',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    medicineId: 'med-desh-zincovit',
+    batchNumber: 'DSH-ZNC-26C',
+    expiryDate: '2027-09-30',
+    purchaseCost: 28.00,
+    mrp: 38.00,
+    quantityReceived: 120,
+    quantityRemaining: 105,
+    supplierName: 'North Bengal Pharma Distributors (Fictional)',
+    status: 'ACTIVE',
+    receivedDate: '2026-06-02'
   }
 ];
 
 export const MOCK_MOVEMENTS: StockMovement[] = [
   {
     id: 'mov-dolo-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     batchId: 'batch-dolo-01',
     medicineId: 'med-dolo-650',
     medicineName: 'Dolo 650',
@@ -214,6 +313,7 @@ export const MOCK_MOVEMENTS: StockMovement[] = [
   },
   {
     id: 'mov-dolo-02',
+    pharmacyId: 'pharm-nandan-kolkata',
     batchId: 'batch-dolo-02',
     medicineId: 'med-dolo-650',
     medicineName: 'Dolo 650',
@@ -228,6 +328,7 @@ export const MOCK_MOVEMENTS: StockMovement[] = [
   },
   {
     id: 'mov-aug-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     batchId: 'batch-aug-01',
     medicineId: 'med-augmentin-625',
     medicineName: 'Augmentin 625 Duo',
@@ -242,6 +343,7 @@ export const MOCK_MOVEMENTS: StockMovement[] = [
   },
   {
     id: 'mov-cet-01',
+    pharmacyId: 'pharm-nandan-kolkata',
     batchId: 'batch-cet-exp',
     medicineId: 'med-cetirizine-10',
     medicineName: 'Cetzine 10',
@@ -256,6 +358,7 @@ export const MOCK_MOVEMENTS: StockMovement[] = [
   },
   {
     id: 'mov-cet-exp-adj',
+    pharmacyId: 'pharm-nandan-kolkata',
     batchId: 'batch-cet-exp',
     medicineId: 'med-cetirizine-10',
     medicineName: 'Cetzine 10',
@@ -270,6 +373,7 @@ export const MOCK_MOVEMENTS: StockMovement[] = [
   },
   {
     id: 'mov-cet-02',
+    pharmacyId: 'pharm-nandan-kolkata',
     batchId: 'batch-cet-active',
     medicineId: 'med-cetirizine-10',
     medicineName: 'Cetzine 10',
@@ -281,5 +385,100 @@ export const MOCK_MOVEMENTS: StockMovement[] = [
     reason: 'Fresh batch receipt from Hooghly Pharma',
     timestamp: '2026-05-04T12:20:00.000Z',
     performedBy: 'Nandan Owner (Demo)'
+  },
+
+  // Deshbandhu Medical Hall isolated tenant ledger
+  {
+    id: 'mov-desh-atorva-01',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    batchId: 'batch-desh-atorva-01',
+    medicineId: 'med-desh-atorva-10',
+    medicineName: 'Atorva 10 (10 mg)',
+    batchNumber: 'DSH-ATV-26A',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 90,
+    balanceBefore: 0,
+    balanceAfter: 90,
+    reason: 'Initial purchase from North Bengal Pharma Distributors',
+    timestamp: '2026-03-12T10:00:00.000Z',
+    performedBy: 'Subhash Mukherjee (Demo)'
+  },
+  {
+    id: 'mov-desh-atorva-02',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    batchId: 'batch-desh-atorva-01',
+    medicineId: 'med-desh-atorva-10',
+    medicineName: 'Atorva 10 (10 mg)',
+    batchNumber: 'DSH-ATV-26A',
+    movementType: 'SALE_DISPENSE',
+    quantityChange: -18,
+    balanceBefore: 90,
+    balanceAfter: 72,
+    reason: 'Counter Sale DSH-INV-2026-0001',
+    referenceId: 'DSH-INV-2026-0001',
+    timestamp: '2026-09-28T15:10:00.000Z',
+    performedBy: 'Aniket Roy (Demo)'
+  },
+  {
+    id: 'mov-desh-shelcal-01',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    batchId: 'batch-desh-shelcal-01',
+    medicineId: 'med-desh-shelcal-500',
+    medicineName: 'Shelcal 500 (500mg + 250IU)',
+    batchNumber: 'DSH-SHL-26B',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 60,
+    balanceBefore: 0,
+    balanceAfter: 60,
+    reason: 'Initial purchase from Himalayan Health Supplies',
+    timestamp: '2026-05-18T11:30:00.000Z',
+    performedBy: 'Subhash Mukherjee (Demo)'
+  },
+  {
+    id: 'mov-desh-shelcal-02',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    batchId: 'batch-desh-shelcal-01',
+    medicineId: 'med-desh-shelcal-500',
+    medicineName: 'Shelcal 500 (500mg + 250IU)',
+    batchNumber: 'DSH-SHL-26B',
+    movementType: 'SALE_DISPENSE',
+    quantityChange: -16,
+    balanceBefore: 60,
+    balanceAfter: 44,
+    reason: 'Counter Sale DSH-INV-2026-0002',
+    referenceId: 'DSH-INV-2026-0002',
+    timestamp: '2026-10-02T12:45:00.000Z',
+    performedBy: 'Aniket Roy (Demo)'
+  },
+  {
+    id: 'mov-desh-zincovit-01',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    batchId: 'batch-desh-zincovit-01',
+    medicineId: 'med-desh-zincovit',
+    medicineName: 'Zincovit (Multivitamin)',
+    batchNumber: 'DSH-ZNC-26C',
+    movementType: 'PURCHASE_RECEIPT',
+    quantityChange: 120,
+    balanceBefore: 0,
+    balanceAfter: 120,
+    reason: 'Initial purchase from North Bengal Pharma Distributors',
+    timestamp: '2026-06-02T09:15:00.000Z',
+    performedBy: 'Subhash Mukherjee (Demo)'
+  },
+  {
+    id: 'mov-desh-zincovit-02',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
+    batchId: 'batch-desh-zincovit-01',
+    medicineId: 'med-desh-zincovit',
+    medicineName: 'Zincovit (Multivitamin)',
+    batchNumber: 'DSH-ZNC-26C',
+    movementType: 'SALE_DISPENSE',
+    quantityChange: -15,
+    balanceBefore: 120,
+    balanceAfter: 105,
+    reason: 'Counter Sale DSH-INV-2026-0003',
+    referenceId: 'DSH-INV-2026-0003',
+    timestamp: '2026-10-06T17:00:00.000Z',
+    performedBy: 'Aniket Roy (Demo)'
   }
 ];

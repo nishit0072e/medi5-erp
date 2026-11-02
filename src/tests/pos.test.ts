@@ -53,6 +53,7 @@ describe('Stage 3B: FEFO Allocation Engine', () => {
 
   const testMedicine: Medicine = {
     id: 'med-paracetamol-500',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Paracetamol 500',
     genericName: 'Paracetamol',
     strength: '500 mg',
@@ -66,6 +67,7 @@ describe('Stage 3B: FEFO Allocation Engine', () => {
     // Batch 1: Expired (Oct 10, 2026) -> Should be excluded
     {
       id: 'batch-exp-01',
+      pharmacyId: 'pharm-nandan-kolkata',
       medicineId: 'med-paracetamol-500',
       batchNumber: 'LOT-EXPIRED',
       expiryDate: '2026-10-10',
@@ -80,6 +82,7 @@ describe('Stage 3B: FEFO Allocation Engine', () => {
     // Batch 2: Quarantined -> Should be excluded
     {
       id: 'batch-quarantine-01',
+      pharmacyId: 'pharm-nandan-kolkata',
       medicineId: 'med-paracetamol-500',
       batchNumber: 'LOT-QUARANTINE',
       expiryDate: '2027-05-31',
@@ -94,6 +97,7 @@ describe('Stage 3B: FEFO Allocation Engine', () => {
     // Batch 3: Depleted (0 units remaining) -> Should be excluded
     {
       id: 'batch-depleted-01',
+      pharmacyId: 'pharm-nandan-kolkata',
       medicineId: 'med-paracetamol-500',
       batchNumber: 'LOT-DEPLETED',
       expiryDate: '2027-01-31',
@@ -108,6 +112,7 @@ describe('Stage 3B: FEFO Allocation Engine', () => {
     // Batch 4: Valid, Earliest Expiry (Nov 30, 2026) -> Should be picked first
     {
       id: 'batch-early-01',
+      pharmacyId: 'pharm-nandan-kolkata',
       medicineId: 'med-paracetamol-500',
       batchNumber: 'LOT-EARLY',
       expiryDate: '2026-11-30',
@@ -122,6 +127,7 @@ describe('Stage 3B: FEFO Allocation Engine', () => {
     // Batch 5: Valid, Later Expiry (Dec 31, 2027) -> Should be picked second
     {
       id: 'batch-late-01',
+      pharmacyId: 'pharm-nandan-kolkata',
       medicineId: 'med-paracetamol-500',
       batchNumber: 'LOT-LATE',
       expiryDate: '2027-12-31',
@@ -234,7 +240,7 @@ describe('Stage 3B: Atomic Counter Sale Checkout Operation', () => {
         cart: [{ medicineId: 'med-does-not-exist', quantity: 5 }],
         sellingBill: 100
       }, refDate);
-    }).toThrow(/does not exist in the catalog/);
+    }).toThrow(/does not exist in this pharmacy's catalog/);
   });
 
   it('validates Selling Bill: rejects negative or NaN values', () => {
@@ -442,6 +448,7 @@ describe('Stage 3B.1: POS & Inventory End-to-End Integrity Audit Tests', () => {
     // Single batch with 15 units available
     const singleMed: Medicine = {
       id: 'med-single-batch',
+      pharmacyId: 'pharm-nandan-kolkata',
       name: 'Test Med Single',
       genericName: 'Test Generic',
       strength: '100mg',
@@ -452,6 +459,7 @@ describe('Stage 3B.1: POS & Inventory End-to-End Integrity Audit Tests', () => {
     };
     const singleBatch: MedicineBatch = {
       id: 'b-single-1',
+      pharmacyId: 'pharm-nandan-kolkata',
       medicineId: 'med-single-batch',
       batchNumber: 'LOT-S1',
       expiryDate: '2027-10-31',
@@ -581,6 +589,7 @@ describe('Stage 3B.1: POS & Inventory End-to-End Integrity Audit Tests', () => {
   it('loadDemoInventory() filters out malformed sales records while preserving valid ones', () => {
     const validSale = {
       id: 'INV-2026-0001-TEST',
+      pharmacyId: 'pharm-nandan-kolkata',
       clientSaleToken: 'tok-valid',
       timestamp: new Date().toISOString(),
       items: [],

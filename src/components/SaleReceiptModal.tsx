@@ -35,8 +35,8 @@ export const SaleReceiptModal: React.FC<SaleReceiptModalProps> = ({
   })();
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
-      <div className="modal-content receipt-modal-card">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+      <div className="modal-container receipt-modal-card">
         {/* Modal Header */}
         <div className="modal-header receipt-modal-header no-print">
           <div className="receipt-header-title-wrap">

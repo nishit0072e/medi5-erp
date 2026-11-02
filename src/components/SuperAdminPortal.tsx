@@ -12,11 +12,18 @@ import {
   FileText, 
   Sparkles, 
   Search, 
-  ArrowRight
+  ArrowRight,
+  X
 } from 'lucide-react';
 import { PharmacyProfile, UpdatePharmacyInput } from '../types/pharmacy';
 import { Medicine, MedicineBatch, SaleRecord, StockMovement } from '../types/inventory';
-import { toPaise, fromPaise, formatINR } from '../utils/moneyUtils';
+import { formatINR } from '../utils/moneyUtils';
+import {
+  calculatePharmacyHealthSummaries,
+  calculatePlatformStats,
+  formatMonthLabel,
+  PlatformFeeBasis
+} from '../utils/platformMetrics';
 
 interface SuperAdminPortalProps {
   pharmacies: PharmacyProfile[];
@@ -41,9 +48,11 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
 }) => {
   // Configurable Platform Usage Fee percentage (default 2.0%)
   const [platformFeeRate, setPlatformFeeRate] = useState<number>(2.0);
-  const [feeBase, setFeeBase] = useState<'sales' | 'profit'>('sales');
+  const [feeBase, setFeeBase] = useState<PlatformFeeBasis>('sales');
   const [searchQuery, setSearchQuery] = useState('');
   const [isNewStoreModalOpen, setIsNewStoreModalOpen] = useState(false);
+  const referenceDate = useMemo(() => new Date(), []);
+  const monthLabel = formatMonthLabel(referenceDate);
 
   // New store form state
   const [newStoreName, setNewStoreName] = useState('');
@@ -70,71 +79,28 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     );
   }, [pharmacies, searchQuery]);
 
-  // Aggregate Platform-wide financial metrics
   const platformStats = useMemo(() => {
-    let totalSalesPaise = 0;
-    let totalGrossProfitPaise = 0;
-
-    for (const sale of allSales) {
-      totalSalesPaise += toPaise(sale.sellingBill);
-      totalGrossProfitPaise += toPaise(sale.estimatedGrossProfit);
-    }
-
-    const totalSalesRupees = fromPaise(totalSalesPaise);
-    const totalProfitRupees = fromPaise(totalGrossProfitPaise);
-
-    // Platform usage fee calculation
-    const baseAmount = feeBase === 'sales' ? totalSalesRupees : totalProfitRupees;
-    const projectedPlatformRevenue = (baseAmount * platformFeeRate) / 100;
-
-    const totalActiveBatches = allBatches.filter((b) => b.quantityRemaining > 0 && b.status === 'ACTIVE').length;
-    const totalExpiringSoonBatches = allBatches.filter((b) => {
-      if (b.quantityRemaining <= 0) return false;
-      const exp = new Date(b.expiryDate).getTime();
-      const diffDays = (exp - Date.now()) / (1000 * 60 * 60 * 24);
-      return diffDays <= 60 && diffDays > 0;
-    }).length;
-
-    return {
-      totalSalesRupees,
-      totalProfitRupees,
-      projectedPlatformRevenue,
-      totalInvoices: allSales.length,
-      totalPharmacies: pharmacies.length,
-      totalMedicines: allMedicines.length,
-      totalActiveBatches,
-      totalExpiringSoonBatches,
-      totalAuditEntries: allMovements.length
-    };
-  }, [allSales, pharmacies.length, allMedicines.length, allBatches, feeBase, platformFeeRate, allMovements.length]);
-
-  // Per-pharmacy performance & monitoring breakdown (respecting live search query)
-  const pharmacyHealthSummaries = useMemo(() => {
-    return filteredPharmacies.map((pharmacy) => {
-      // For demo simulation, attribute sales or show per-tenant totals
-      const storeSales = allSales; // in demo state, sales occur in active context
-      const storeSalesPaise = storeSales.reduce((acc, s) => acc + toPaise(s.sellingBill), 0);
-      const storeProfitPaise = storeSales.reduce((acc, s) => acc + toPaise(s.estimatedGrossProfit), 0);
-
-      const storeSalesRupees = fromPaise(storeSalesPaise);
-      const storeProfitRupees = fromPaise(storeProfitPaise);
-
-      const base = feeBase === 'sales' ? storeSalesRupees : storeProfitRupees;
-      const storeFeeDue = (base * platformFeeRate) / 100;
-
-      const owner = pharmacy.members.find((m) => m.role === 'OWNER') || pharmacy.members[0];
-
-      return {
-        pharmacy,
-        owner,
-        salesVolume: storeSalesRupees,
-        profitVolume: storeProfitRupees,
-        invoicesCount: storeSales.length,
-        platformFeeDue: storeFeeDue,
-        systemStatus: 'HEALTHY' as const
-      };
+    return calculatePlatformStats({
+      sales: allSales,
+      pharmacies,
+      medicines: allMedicines,
+      batches: allBatches,
+      movements: allMovements,
+      feeBase,
+      feeRate: platformFeeRate,
+      referenceDate
     });
-  }, [filteredPharmacies, allSales, feeBase, platformFeeRate]);
+  }, [allSales, pharmacies, allMedicines, allBatches, allMovements, feeBase, platformFeeRate, referenceDate]);
+
+  const pharmacyHealthSummaries = useMemo(() => {
+    return calculatePharmacyHealthSummaries({
+      pharmacies: filteredPharmacies,
+      sales: allSales,
+      feeBase,
+      feeRate: platformFeeRate,
+      referenceDate
+    });
+  }, [filteredPharmacies, allSales, feeBase, platformFeeRate, referenceDate]);
 
   const handleCreateStoreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,7 +191,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
           <div className="admin-kpi-value text-emerald-400">
             {formatINR(platformStats.totalSalesRupees)}
           </div>
-          <span className="admin-kpi-sub">Gross revenue processed across retail counters</span>
+          <span className="admin-kpi-sub">
+            Lifetime • {formatINR(platformStats.monthlySalesRupees)} in {monthLabel}
+          </span>
         </div>
 
         <div className="admin-kpi-card">
@@ -236,7 +204,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
           <div className="admin-kpi-value text-blue-400">
             {formatINR(platformStats.totalProfitRupees)}
           </div>
-          <span className="admin-kpi-sub">Combined retail store margins</span>
+          <span className="admin-kpi-sub">
+            Lifetime • {formatINR(platformStats.monthlyProfitRupees)} in {monthLabel}
+          </span>
         </div>
 
         <div className="admin-kpi-card highlight-card">
@@ -248,7 +218,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
             {formatINR(platformStats.projectedPlatformRevenue)}
           </div>
           <span className="admin-kpi-sub font-mono">
-            At {platformFeeRate.toFixed(1)}% fee on {feeBase === 'sales' ? 'Gross Sales' : 'Gross Profit'}
+            {monthLabel} • At {platformFeeRate.toFixed(1)}% of monthly {feeBase === 'sales' ? 'gross sales' : 'gross profit'}
           </span>
         </div>
 
@@ -260,7 +230,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
           <div className="admin-kpi-value">
             {platformStats.totalInvoices}
           </div>
-          <span className="admin-kpi-sub">Total verified walk-in transactions</span>
+          <span className="admin-kpi-sub">
+            Total • {platformStats.monthlyInvoices} in {monthLabel}
+          </span>
         </div>
 
         <div className="admin-kpi-card">
@@ -337,17 +309,19 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
           </div>
 
           <div className="billing-projection-box">
-            <span className="text-xs font-bold text-muted uppercase">Monthly Estimated Platform Income:</span>
+            <span className="text-xs font-bold text-muted uppercase">
+              Monthly Estimated Platform Income ({monthLabel}):
+            </span>
             <div className="projected-amount">{formatINR(platformStats.projectedPlatformRevenue)}</div>
             <p className="text-xs text-muted mt-1">
-              Collected from {pharmacies.length} pharmacies to fund software uptime and database operations.
+              Based on {platformStats.monthlyInvoices} invoices from {pharmacies.length} pharmacies in {monthLabel}.
             </p>
           </div>
         </div>
       </div>
 
       {/* REAL-TIME PHARMACY TENANT MONITORING TABLE */}
-      <div className="superadmin-table-card">
+      <div className="superadmin-table-card superadmin-card-table">
         <div className="table-card-header">
           <div className="table-title-wrap">
             <Activity size={18} className="text-emerald-400" />
@@ -369,6 +343,16 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="search-clear-btn"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear pharmacy search"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
 
             <button
@@ -388,17 +372,28 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                 <th>Pharmacy Tenant</th>
                 <th>Drug License (Form 20/21) & GSTIN</th>
                 <th>Owner & Contact</th>
-                <th>Sales Volume (GMV)</th>
-                <th>Retail Gross Profit</th>
-                <th>Platform Fee ({platformFeeRate.toFixed(1)}%)</th>
+                <th>Lifetime Sales (GMV)</th>
+                <th>Lifetime Gross Profit</th>
+                <th>Monthly Fee ({platformFeeRate.toFixed(1)}%)</th>
                 <th>System Health</th>
                 <th>Super Admin Action</th>
               </tr>
             </thead>
             <tbody>
-              {pharmacyHealthSummaries.map(({ pharmacy, owner, salesVolume, profitVolume, platformFeeDue, systemStatus }) => (
+              {pharmacyHealthSummaries.map(({
+                pharmacy,
+                owner,
+                salesVolume,
+                profitVolume,
+                monthlySalesVolume,
+                monthlyProfitVolume,
+                invoicesCount,
+                monthlyInvoicesCount,
+                platformFeeDue,
+                systemStatus
+              }) => (
                 <tr key={pharmacy.id}>
-                  <td>
+                  <td data-label="Pharmacy Tenant">
                     <div className="store-cell">
                       <div className="store-avatar">{pharmacy.name.charAt(0)}</div>
                       <div>
@@ -409,7 +404,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="License & GSTIN">
                     <div className="font-mono text-xs font-bold text-amber-300">
                       {pharmacy.drugLicenseNumber}
                     </div>
@@ -419,32 +414,39 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                       </div>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Owner & Contact">
                     <div className="text-xs font-bold">{owner?.name || 'Store Owner'}</div>
                     <div className="text-xs text-muted font-mono">{pharmacy.phone}</div>
                   </td>
-                  <td>
+                  <td data-label="Lifetime Sales">
                     <div className="font-mono font-bold text-emerald-400">
                       {formatINR(salesVolume)}
                     </div>
+                    <div className="text-xs text-muted">
+                      {formatINR(monthlySalesVolume)} this month • {invoicesCount} lifetime / {monthlyInvoicesCount} monthly
+                    </div>
                   </td>
-                  <td>
+                  <td data-label="Lifetime Profit">
                     <div className="font-mono font-bold text-blue-400">
                       {formatINR(profitVolume)}
                     </div>
+                    <div className="text-xs text-muted">
+                      {formatINR(monthlyProfitVolume)} this month
+                    </div>
                   </td>
-                  <td>
+                  <td data-label="Monthly Fee">
                     <div className="font-mono font-bold text-amber-400">
                       {formatINR(platformFeeDue)}
                     </div>
+                    <div className="text-xs text-muted">{monthLabel}</div>
                   </td>
-                  <td>
+                  <td data-label="System Health">
                     <span className="health-badge-healthy">
                       <CheckCircle2 size={12} />
                       <span>{systemStatus} (0 ERRORS)</span>
                     </span>
                   </td>
-                  <td>
+                  <td data-label="Action">
                     <button
                       type="button"
                       className="btn-inspect-tenant"
@@ -463,7 +465,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
       </div>
 
       {/* RECENT CROSS-STORE INVOICE DISPENSING FEED */}
-      <div className="superadmin-table-card">
+      <div className="superadmin-table-card superadmin-card-table">
         <div className="table-card-header">
           <div className="table-title-wrap">
             <Receipt size={18} className="text-purple-400" />
@@ -493,21 +495,23 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
               <tbody>
                 {allSales.slice(0, 8).map((sale) => (
                   <tr key={sale.id}>
-                    <td className="font-mono text-xs font-bold text-amber-300">{sale.id}</td>
-                    <td>
-                      <span className="store-tag">{pharmacies[0]?.name || 'Nandan Pharmacy'}</span>
+                    <td data-label="Invoice Ref" className="font-mono text-xs font-bold text-amber-300">{sale.id}</td>
+                    <td data-label="Store Tenant">
+                      <span className="store-tag">
+                        {pharmacies.find((p) => p.id === sale.pharmacyId)?.name || 'Unknown tenant'}
+                      </span>
                     </td>
-                    <td className="text-xs">
+                    <td data-label="Items" className="text-xs">
                       {sale.items.reduce((acc, item) => acc + item.quantity, 0)} units
                     </td>
-                    <td className="font-mono text-xs">{formatINR(sale.totalBillMrp)}</td>
-                    <td className="font-mono text-xs font-bold text-emerald-400">{formatINR(sale.sellingBill)}</td>
-                    <td className="font-mono text-xs font-bold text-blue-400">{formatINR(sale.estimatedGrossProfit)}</td>
-                    <td>
+                    <td data-label="Total Bill" className="font-mono text-xs">{formatINR(sale.totalBillMrp)}</td>
+                    <td data-label="Selling Bill" className="font-mono text-xs font-bold text-emerald-400">{formatINR(sale.sellingBill)}</td>
+                    <td data-label="Gross Profit" className="font-mono text-xs font-bold text-blue-400">{formatINR(sale.estimatedGrossProfit)}</td>
+                    <td data-label="Tender" >
                       <span className="badge-tender">{sale.tenderType}</span>
                     </td>
-                    <td className="text-xs">{sale.staffUser}</td>
-                    <td className="font-mono text-xs text-muted">{new Date(sale.timestamp).toLocaleTimeString()}</td>
+                    <td data-label="Dispenser" className="text-xs">{sale.staffUser}</td>
+                    <td data-label="Timestamp" className="font-mono text-xs text-muted">{new Date(sale.timestamp).toLocaleTimeString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -534,12 +538,13 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                 type="button" 
                 className="modal-close-btn" 
                 onClick={() => setIsNewStoreModalOpen(false)}
+                aria-label="Close new pharmacy form"
               >
-                ×
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateStoreSubmit} className="modal-form">
+            <form onSubmit={handleCreateStoreSubmit} className="modal-body modal-form">
               <div className="settings-grid-2">
                 <div className="form-group">
                   <label className="form-label">Pharmacy Name *</label>

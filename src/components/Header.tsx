@@ -138,7 +138,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onViewChange('inventory')}
           >
             <ListFilter size={15} />
-            <span>Medicine Inventory</span>
+            <span title="Medicine Inventory">Inventory</span>
           </button>
 
           <button
@@ -149,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onViewChange('pos')}
           >
             <ShoppingCart size={15} />
-            <span>Counter POS</span>
+            <span title="Counter POS">POS</span>
             {salesCount > 0 && <span className="tab-count-badge pos-tab-badge">{salesCount}</span>}
           </button>
 
@@ -161,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onViewChange('ledger')}
           >
             <History size={15} />
-            <span>Stock Ledger</span>
+            <span title="Stock Ledger">Ledger</span>
             <span className="tab-count-badge">{ledgerCount}</span>
           </button>
 
@@ -173,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onViewChange('settings')}
           >
             <Building2 size={15} />
-            <span>Pharmacy Profile</span>
+            <span title="Pharmacy Profile">Profile</span>
           </button>
         </div>
       </header>

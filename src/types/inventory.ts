@@ -39,6 +39,7 @@ export type MovementType =
  */
 export interface Medicine {
   id: string;
+  pharmacyId: string; // Tenant owner of this master catalog record
   name: string;
   genericName: string;
   strength: string;
@@ -55,6 +56,7 @@ export interface Medicine {
  */
 export interface MedicineBatch {
   id: string;
+  pharmacyId: string; // Must match the parent medicine's pharmacyId
   medicineId: string;
   batchNumber: string;
   expiryDate: string; // ISO 'YYYY-MM-DD' or 'YYYY-MM' (normalized to end of month)
@@ -74,6 +76,7 @@ export type BatchRecord = MedicineBatch;
  */
 export interface StockMovement {
   id: string;
+  pharmacyId: string; // Must match the parent batch's pharmacyId
   batchId: string;
   medicineId: string;
   medicineName: string;
@@ -118,6 +121,7 @@ export type ExpiryFilter = 'ALL' | 'EXPIRING_SOON' | 'EXPIRED' | 'VALID';
  * Input for receiving stock into inventory
  */
 export interface ReceiveStockInput {
+  pharmacyId?: string;
   medicineId?: string;
   newMedicine?: {
     name: string;
@@ -141,6 +145,7 @@ export interface ReceiveStockInput {
  * Input for adjusting inventory stock
  */
 export interface AdjustStockInput {
+  pharmacyId?: string;
   batchId: string;
   batchNumber?: string;
   movementType: 'AUDIT_CORRECTION' | 'DAMAGE_WRITE_OFF' | 'EXPIRED_WRITE_OFF';
@@ -210,6 +215,7 @@ export interface SaleItemSummary {
  */
 export interface SaleRecord {
   id: string; // e.g. "INV-2026-0001"
+  pharmacyId: string; // Tenant that owns this sale
   clientSaleToken: string; // Idempotency token
   timestamp: string; // ISO string
   items: SaleItemSummary[];
@@ -227,6 +233,7 @@ export interface SaleRecord {
  * Input for atomic counter-sale checkout operation.
  */
 export interface ProcessSaleInput {
+  pharmacyId?: string;
   clientSaleToken: string;
   cart: CartLineItem[];
   sellingBill: number;

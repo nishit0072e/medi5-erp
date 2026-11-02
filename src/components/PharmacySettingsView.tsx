@@ -752,7 +752,7 @@ export const PharmacySettingsView: React.FC<PharmacySettingsViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleAddStaffSubmit} className="modal-form">
+            <form onSubmit={handleAddStaffSubmit} className="modal-body modal-form">
               <div className="form-group">
                 <label className="form-label">Full Name *</label>
                 <input
@@ -836,7 +836,7 @@ export const PharmacySettingsView: React.FC<PharmacySettingsViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateStoreSubmit} className="modal-form">
+            <form onSubmit={handleCreateStoreSubmit} className="modal-body modal-form">
               <div className="settings-grid-2">
                 <div className="form-group">
                   <label className="form-label">Store Trade Name *</label>

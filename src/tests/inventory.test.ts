@@ -85,6 +85,7 @@ describe('Inventory Calculation Invariants', () => {
   it('strictly excludes expired batches from saleable quantity', () => {
     const med: Medicine = {
       id: 'med-test-1',
+      pharmacyId: 'pharm-nandan-kolkata',
       name: 'Test Antihistamine',
       genericName: 'Cetirizine',
       strength: '10mg',
@@ -97,6 +98,7 @@ describe('Inventory Calculation Invariants', () => {
     const batches: MedicineBatch[] = [
       {
         id: 'b-1',
+        pharmacyId: 'pharm-nandan-kolkata',
         medicineId: 'med-test-1',
         batchNumber: 'B-EXPIRED',
         expiryDate: '2026-08-31', // Expired
@@ -110,6 +112,7 @@ describe('Inventory Calculation Invariants', () => {
       },
       {
         id: 'b-2',
+        pharmacyId: 'pharm-nandan-kolkata',
         medicineId: 'med-test-1',
         batchNumber: 'B-ACTIVE',
         expiryDate: '2027-08-31', // Valid
@@ -137,6 +140,7 @@ describe('Inventory Calculation Invariants', () => {
   it('selects the earliest expiring valid batch under FEFO rule', () => {
     const med: Medicine = {
       id: 'med-test-fefo',
+      pharmacyId: 'pharm-nandan-kolkata',
       name: 'Test Paracetamol',
       genericName: 'Paracetamol',
       strength: '500mg',
@@ -149,6 +153,7 @@ describe('Inventory Calculation Invariants', () => {
     const batches: MedicineBatch[] = [
       {
         id: 'b-later',
+        pharmacyId: 'pharm-nandan-kolkata',
         medicineId: 'med-test-fefo',
         batchNumber: 'BATCH-2028',
         expiryDate: '2028-12-31', // Later expiry
@@ -162,6 +167,7 @@ describe('Inventory Calculation Invariants', () => {
       },
       {
         id: 'b-sooner',
+        pharmacyId: 'pharm-nandan-kolkata',
         medicineId: 'med-test-fefo',
         batchNumber: 'BATCH-2026-NOV',
         expiryDate: '2026-11-30', // Earlier expiry -> FEFO winner
@@ -184,8 +190,10 @@ describe('Inventory Calculation Invariants', () => {
     expect(summary.earliestExpiryDate).toBe('2026-11-30');
   });
 
-  it('correctly evaluates low-stock and out-of-stock states', () => {
-    const summaries = calculateAllSummaries(MOCK_MEDICINES, MOCK_BATCHES, refDate);
+  it('correctly evaluates low-stock and out-of-stock states for a tenant', () => {
+    const nandanMedicines = MOCK_MEDICINES.filter((m) => m.pharmacyId === 'pharm-nandan-kolkata');
+    const nandanBatches = MOCK_BATCHES.filter((b) => b.pharmacyId === 'pharm-nandan-kolkata');
+    const summaries = calculateAllSummaries(nandanMedicines, nandanBatches, refDate);
     const kpis = calculateInventoryKpis(summaries);
 
     // Dolo 650: 18 + 140 = 158 units (threshold 25) -> In Stock
@@ -451,6 +459,7 @@ describe('Stage 3A.1: Integrity Audit & Regression Coverage', () => {
   it('FEFO selection ignores batches with zero remaining quantity (depleted)', () => {
     const med: Medicine = {
       id: 'med-fefo-depleted-test',
+      pharmacyId: 'pharm-nandan-kolkata',
       name: 'Depleted FEFO Test',
       genericName: 'Sample',
       strength: '500 mg',
@@ -463,6 +472,7 @@ describe('Stage 3A.1: Integrity Audit & Regression Coverage', () => {
     const batches: MedicineBatch[] = [
       {
         id: 'b-earlier-depleted',
+        pharmacyId: 'pharm-nandan-kolkata',
         medicineId: 'med-fefo-depleted-test',
         batchNumber: 'DEPLETED-EARLIER',
         expiryDate: '2026-11-30', // Expires sooner, but remaining is 0!
@@ -476,6 +486,7 @@ describe('Stage 3A.1: Integrity Audit & Regression Coverage', () => {
       },
       {
         id: 'b-later-active',
+        pharmacyId: 'pharm-nandan-kolkata',
         medicineId: 'med-fefo-depleted-test',
         batchNumber: 'ACTIVE-LATER',
         expiryDate: '2027-12-31', // Expires later, has 45 units available

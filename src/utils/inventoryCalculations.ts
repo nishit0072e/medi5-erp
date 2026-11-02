@@ -18,8 +18,11 @@ export function calculateMedicineSummary(
   batches: MedicineBatch[],
   referenceDate: Date = new Date()
 ): MedicineInventorySummary {
-  // Filter batches belonging to this medicine
-  const medicineBatches = batches.filter((b) => b.medicineId === medicine.id);
+  // Filter batches belonging to this medicine AND tenant. This prevents a caller from
+  // accidentally aggregating another pharmacy's batches into this medicine's totals.
+  const medicineBatches = batches.filter(
+    (b) => b.medicineId === medicine.id && b.pharmacyId === medicine.pharmacyId
+  );
 
   let totalQuantity = 0;
   let saleableQuantity = 0;

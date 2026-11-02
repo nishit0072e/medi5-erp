@@ -89,7 +89,7 @@ export const AdjustStockModal: React.FC<AdjustStockModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="modal-form">
+        <form onSubmit={handleSubmit} className="modal-body modal-form">
           {/* Target Batch Info Card */}
           <div className="target-batch-summary">
             <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{medicine.name} {medicine.strength}</div>

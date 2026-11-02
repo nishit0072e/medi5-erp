@@ -13,14 +13,16 @@ import { SaleReceiptModal } from './components/SaleReceiptModal';
 import { PharmacySettingsView } from './components/PharmacySettingsView';
 import { LoginScreen } from './components/LoginScreen';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
-import { getStoredSession, clearStoredSession } from './utils/authService';
+import { getStoredSession, clearStoredSession, AUTH_SESSION_KEY } from './utils/authService';
 import { 
+  DEMO_STORAGE_KEY,
   loadDemoInventory, 
   saveDemoInventory, 
   resetDemoInventory, 
   processStockReceipt, 
   processStockAdjustment,
   processSaleCheckout,
+  getTenantInventory,
   updatePharmacyProfile,
   switchPharmacyTenant,
   createPharmacyTenant,
@@ -48,31 +50,39 @@ export const App: React.FC = () => {
 
   // 1. Initial State from Versioned Demo Repository
   const [demoState, setDemoState] = useState(() => loadDemoInventory());
-  const { medicines, batches, movements, sales = [], pharmacies = [], activePharmacyId = '' } = demoState;
+  const {
+    medicines: allMedicines,
+    batches: allBatches,
+    movements: allMovements,
+    sales: allSales = [],
+    pharmacies = [],
+    activePharmacyId = ''
+  } = demoState;
 
   // Determine current role & isolated pharmacy context
   const isSuperAdmin = session?.user.role === 'SUPER_ADMIN';
 
   // Active Pharmacy Tenant:
-  // - If Super Admin is inspecting a pharmacy: use inspectingPharmacyId or activePharmacyId
-  // - If Tenant is logged in: STRICT TENANT ISOLATION -> use session.user.pharmacyId
+  // - Super Admin may inspect any pharmacy (or the last active tenant).
+  // - Tenant users are strictly bound to their authenticated pharmacyId. No fallback.
   const effectivePharmacyId = isSuperAdmin
-    ? (inspectingPharmacyId || activePharmacyId || pharmacies[0]?.id)
-    : (session?.user.pharmacyId || activePharmacyId || pharmacies[0]?.id);
+    ? (inspectingPharmacyId || activePharmacyId || pharmacies[0]?.id || '')
+    : (session?.user.pharmacyId || '');
 
   const activePharmacy = useMemo(() => {
-    return pharmacies.find((p) => p.id === effectivePharmacyId) || pharmacies[0];
-  }, [pharmacies, effectivePharmacyId]);
+    return pharmacies.find((p) => p.id === effectivePharmacyId)
+      || (isSuperAdmin ? pharmacies[0] : undefined);
+  }, [pharmacies, effectivePharmacyId, isSuperAdmin]);
 
-  const handleLogout = useCallback(() => {
-    clearStoredSession();
-    setSession(null);
-    setInspectingPharmacyId(null);
-  }, []);
+  const tenantInventory = useMemo(
+    () => getTenantInventory(demoState, effectivePharmacyId),
+    [demoState, effectivePharmacyId]
+  );
+  const { medicines, batches, movements, sales } = tenantInventory;
 
   // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'settings')
   const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'settings'>('inventory');
-  const [activeTab, setActiveTab] = useState<'inventory' | 'patients' | 'analytics' | 'settings'>('inventory');
+  const activeTab: 'inventory' | 'settings' = activeView === 'settings' ? 'settings' : 'inventory';
 
   // 3. Search & Filters for Inventory View
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,6 +99,22 @@ export const App: React.FC = () => {
   // 5. Toast Feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  const handleLogout = useCallback(() => {
+    clearStoredSession();
+    setSession(null);
+    setInspectingPharmacyId(null);
+    setActiveView('inventory');
+    setSearchQuery('');
+    setStockFilter('ALL');
+    setExpiryFilter('ALL');
+    setExpandedIds(new Set());
+    setIsReceiveOpen(false);
+    setAdjustTarget(null);
+    setSelectedReceiptSale(null);
+    setIsReceiptOpen(false);
+    setToast(null);
+  }, []);
+
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
   }, []);
@@ -104,6 +130,21 @@ export const App: React.FC = () => {
   useEffect(() => {
     saveDemoInventory(demoState);
   }, [demoState]);
+
+  // Keep demo data and authentication synchronized across browser tabs
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === DEMO_STORAGE_KEY) {
+        setDemoState(loadDemoInventory());
+      }
+      if (event.key === AUTH_SESSION_KEY) {
+        setSession(getStoredSession());
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   // Derive inventory summaries directly from batch data
   const allSummaries = useMemo(() => {
@@ -212,7 +253,7 @@ export const App: React.FC = () => {
   // Process Stock Receipt
   const handleReceiveStock = (input: ReceiveStockInput) => {
     try {
-      const result = processStockReceipt(demoState, input);
+      const result = processStockReceipt(demoState, input, session?.user.name, effectivePharmacyId);
       const saveOk = saveDemoInventory(result.nextState);
       if (!saveOk) {
         showToast('error', 'Receiving failed: Unable to persist to browser storage. Inventory remains unchanged.');
@@ -239,7 +280,7 @@ export const App: React.FC = () => {
   // Process Stock Adjustment
   const handleAdjustStock = (input: AdjustStockInput) => {
     try {
-      const result = processStockAdjustment(demoState, input);
+      const result = processStockAdjustment(demoState, input, session?.user.name, effectivePharmacyId);
       const saveOk = saveDemoInventory(result.nextState);
       if (!saveOk) {
         showToast('error', 'Adjustment failed: Unable to persist to browser storage. Inventory remains unchanged.');
@@ -260,7 +301,13 @@ export const App: React.FC = () => {
   // Process Counter Sale Checkout (Stage 3B)
   const handleCheckoutSale = (input: ProcessSaleInput): boolean => {
     try {
-      const result = processSaleCheckout(demoState, input);
+      const result = processSaleCheckout(
+        demoState,
+        input,
+        new Date(),
+        session?.user.name,
+        effectivePharmacyId
+      );
       if (result.isIdempotentReplay) {
         showToast('success', `Sale ${result.sale.id} already processed. Displaying receipt.`);
         setSelectedReceiptSale(result.sale);
@@ -288,22 +335,39 @@ export const App: React.FC = () => {
     }
   };
 
-  // Reset Demo Dataset Safely
+  // Reset Demo Dataset Safely (tenant-scoped unless Super Admin)
   const handleResetDemo = () => {
-    if (window.confirm('Reset all inventory, counter sales, and stock ledger changes back to original demo dataset?')) {
-      const fresh = resetDemoInventory();
-      setDemoState(fresh);
-      resetFilters();
-      setExpandedIds(new Set(['med-dolo-650']));
-      showToast('success', 'Demo data reset to initial seed state.');
+    const resetScope = isSuperAdmin ? 'all pharmacy tenants' : activePharmacy?.name || 'this pharmacy';
+    if (window.confirm(`Reset inventory, counter sales, and stock ledger changes for ${resetScope} back to the original demo dataset?`)) {
+      try {
+        const fresh = resetDemoInventory(isSuperAdmin ? undefined : effectivePharmacyId);
+        setDemoState(fresh);
+        resetFilters();
+        setExpandedIds(new Set(['med-dolo-650']));
+        showToast('success', `Demo data reset for ${resetScope}.`);
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Failed to reset demo data.');
+      }
     }
   };
 
   // Pharmacy Profile & Tenant Management (Phase 2)
+  const persistTenantChange = (
+    nextState: ReturnType<typeof updatePharmacyProfile>,
+    failureMessage: string
+  ): boolean => {
+    if (!saveDemoInventory(nextState)) {
+      showToast('error', failureMessage);
+      return false;
+    }
+    setDemoState(nextState);
+    return true;
+  };
+
   const handleUpdatePharmacyProfile = (pharmacyId: string, input: UpdatePharmacyInput) => {
     try {
       const nextState = updatePharmacyProfile(demoState, pharmacyId, input);
-      setDemoState(nextState);
+      if (!persistTenantChange(nextState, 'Profile update failed: unable to persist changes.')) return;
       showToast('success', 'Pharmacy profile and legal details updated successfully.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to update pharmacy profile.');
@@ -313,7 +377,17 @@ export const App: React.FC = () => {
   const handleSwitchPharmacy = (pharmacyId: string) => {
     try {
       const nextState = switchPharmacyTenant(demoState, pharmacyId);
-      setDemoState(nextState);
+      if (!persistTenantChange(nextState, 'Tenant switch failed: unable to persist active pharmacy.')) return;
+      if (isSuperAdmin) setInspectingPharmacyId(pharmacyId);
+      setActiveView('inventory');
+      setSearchQuery('');
+      setStockFilter('ALL');
+      setExpiryFilter('ALL');
+      setExpandedIds(new Set());
+      setSelectedReceiptSale(null);
+      setIsReceiptOpen(false);
+      setAdjustTarget(null);
+      setIsReceiveOpen(false);
       const target = nextState.pharmacies.find((p) => p.id === pharmacyId);
       showToast('success', `Switched active tenant to ${target?.name || 'selected pharmacy'}.`);
     } catch (err) {
@@ -324,7 +398,7 @@ export const App: React.FC = () => {
   const handleCreatePharmacy = (input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }) => {
     try {
       const nextState = createPharmacyTenant(demoState, input);
-      setDemoState(nextState);
+      if (!persistTenantChange(nextState, 'Registration failed: unable to persist the new pharmacy.')) return;
       showToast('success', `Created and activated new pharmacy branch "${input.name}".`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to register pharmacy.');
@@ -334,7 +408,7 @@ export const App: React.FC = () => {
   const handleAddStaffMember = (pharmacyId: string, input: AddMemberInput) => {
     try {
       const nextState = addPharmacyStaffMember(demoState, pharmacyId, input);
-      setDemoState(nextState);
+      if (!persistTenantChange(nextState, 'Staff creation failed: unable to persist changes.')) return;
       showToast('success', `Added ${input.name} (${input.role}) to staff list.`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to add staff member.');
@@ -344,7 +418,7 @@ export const App: React.FC = () => {
   const handleRemoveStaffMember = (pharmacyId: string, memberId: string) => {
     try {
       const nextState = removePharmacyStaffMember(demoState, pharmacyId, memberId);
-      setDemoState(nextState);
+      if (!persistTenantChange(nextState, 'Staff removal failed: unable to persist changes.')) return;
       showToast('success', 'Staff member removed.');
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to remove member.');
@@ -361,10 +435,10 @@ export const App: React.FC = () => {
     return (
       <SuperAdminPortal
         pharmacies={pharmacies}
-        allMedicines={medicines}
-        allBatches={batches}
-        allSales={sales}
-        allMovements={movements}
+        allMedicines={allMedicines}
+        allBatches={allBatches}
+        allSales={allSales}
+        allMovements={allMovements}
         onInspectPharmacy={(pharmacyId) => {
           setInspectingPharmacyId(pharmacyId);
           handleSwitchPharmacy(pharmacyId);
@@ -372,6 +446,20 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         onCreatePharmacy={handleCreatePharmacy}
       />
+    );
+  }
+
+  if (!activePharmacy) {
+    return (
+      <div className="app-container" style={{ padding: '24px' }}>
+        <h2>Tenant context unavailable</h2>
+        <p className="text-muted">
+          Your account is not linked to a provisioned pharmacy. Please sign in again or contact the platform administrator.
+        </p>
+        <button type="button" className="btn-primary-action" onClick={handleLogout}>
+          Sign Out
+        </button>
+      </div>
     );
   }
 
@@ -397,14 +485,10 @@ export const App: React.FC = () => {
 
       {/* Brand Header, Tenant Badge, View Tabs & Demo Banner */}
       <Header 
-        pharmacyName={activePharmacy?.name || 'Nandan Pharmacy'} 
-        location={activePharmacy ? `${activePharmacy.city}, ${activePharmacy.state}` : 'Kolkata, WB'}
+        pharmacyName={activePharmacy.name} 
+        location={`${activePharmacy.city}, ${activePharmacy.state}`}
         activeView={activeView}
-        onViewChange={(view) => {
-          setActiveView(view);
-          if (view === 'inventory') setActiveTab('inventory');
-          if (view === 'settings') setActiveTab('settings');
-        }}
+        onViewChange={setActiveView}
         onOpenReceive={() => setIsReceiveOpen(true)}
         onResetDemo={handleResetDemo}
         ledgerCount={movements.length}
@@ -463,9 +547,11 @@ export const App: React.FC = () => {
         /* Counter Sales POS Screen */
         <main className="pos-main-section" role="region" aria-label="Counter Sales POS">
           <PosScreen
+            key={activePharmacy.id}
             medicines={medicines}
             batches={batches}
             sales={sales}
+            staffUser={session.user.name}
             onCheckout={handleCheckoutSale}
             onViewReceipt={(sale) => {
               setSelectedReceiptSale(sale);
@@ -477,7 +563,7 @@ export const App: React.FC = () => {
         /* Multi-tenant Pharmacy Profile & Settings View (Phase 2) */
         <main className="inventory-list-section" role="region" aria-label="Pharmacy Profile Settings">
           <PharmacySettingsView
-            pharmacies={pharmacies}
+            pharmacies={isSuperAdmin ? pharmacies : [activePharmacy]}
             activePharmacyId={activePharmacy.id}
             isSuperAdmin={isSuperAdmin}
             onSwitchPharmacy={handleSwitchPharmacy}
@@ -485,10 +571,7 @@ export const App: React.FC = () => {
             onCreatePharmacy={handleCreatePharmacy}
             onAddMember={handleAddStaffMember}
             onRemoveMember={handleRemoveStaffMember}
-            onBackToInventory={() => {
-              setActiveView('inventory');
-              setActiveTab('inventory');
-            }}
+            onBackToInventory={() => setActiveView('inventory')}
           />
         </main>
       ) : (
@@ -505,7 +588,6 @@ export const App: React.FC = () => {
       <BottomNav 
         activeTab={activeTab} 
         onTabChange={(tab) => {
-          setActiveTab(tab);
           if (tab === 'inventory') {
             setActiveView('inventory');
           } else if (tab === 'settings') {

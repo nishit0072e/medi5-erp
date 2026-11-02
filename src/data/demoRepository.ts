@@ -29,7 +29,7 @@ import { toPaise, fromPaise } from '../utils/moneyUtils';
 import { calculateCartAllocations } from '../utils/fefoAllocation';
 
 export const DEMO_STORAGE_KEY = 'medi5_demo_inventory_v1';
-export const DEMO_STORAGE_VERSION = 1;
+export const DEMO_STORAGE_VERSION = 2;
 
 export interface StoredDemoData {
   version: number;
@@ -51,19 +51,30 @@ export interface InventoryState {
   activePharmacyId: string;
 }
 
+export function getTenantInventory(state: InventoryState, pharmacyId: string): InventoryState {
+  return {
+    ...state,
+    medicines: state.medicines.filter((m) => m.pharmacyId === pharmacyId),
+    batches: state.batches.filter((b) => b.pharmacyId === pharmacyId),
+    movements: state.movements.filter((m) => m.pharmacyId === pharmacyId),
+    sales: state.sales.filter((s) => s.pharmacyId === pharmacyId)
+  };
+}
+
+function resolvePharmacyId(state: InventoryState, requestedPharmacyId?: string): string {
+  const pharmacyId = requestedPharmacyId || state.activePharmacyId || state.pharmacies[0]?.id;
+  if (!pharmacyId || !state.pharmacies.some((p) => p.id === pharmacyId)) {
+    throw new Error('Tenant context error: A valid pharmacy tenant is required for this operation.');
+  }
+  return pharmacyId;
+}
+
 /**
  * Loads inventory state from localStorage or falls back safely to default synthetic seed.
  */
 export function loadDemoInventory(): InventoryState {
   if (typeof window === 'undefined' || !window.localStorage) {
-    return {
-      medicines: [...MOCK_MEDICINES],
-      batches: [...MOCK_BATCHES],
-      movements: [...MOCK_MOVEMENTS],
-      sales: [],
-      pharmacies: JSON.parse(JSON.stringify(MOCK_PHARMACIES)),
-      activePharmacyId: MOCK_PHARMACIES[0].id
-    };
+    return getInitialSeedState();
   }
 
   try {
@@ -86,24 +97,50 @@ export function loadDemoInventory(): InventoryState {
       return getInitialSeedState();
     }
 
-    // Integrity check: medicines catalog
+    const pharmacies: PharmacyProfile[] = Array.isArray(parsed.pharmacies) && parsed.pharmacies.length > 0
+      ? parsed.pharmacies
+      : JSON.parse(JSON.stringify(MOCK_PHARMACIES));
+    const hasCorruptPharmacy = pharmacies.some(
+      (p) => !p || typeof p.id !== 'string' || !p.id || !Array.isArray(p.members)
+    );
+    if (hasCorruptPharmacy) {
+      console.warn('[Medi5 Demo Repository] Corrupted pharmacy tenant records detected in localStorage. Falling back to default seed.');
+      return getInitialSeedState();
+    }
+    const pharmacyIdSet = new Set(pharmacies.map((p) => p.id));
+
+    // Integrity check: medicines catalog must be explicitly tenant-owned
     const hasCorruptMedicine = parsed.medicines.some(
-      (m) => !m || typeof m.id !== 'string' || !m.id || typeof m.name !== 'string' || !m.name
+      (m) =>
+        !m ||
+        typeof m.id !== 'string' ||
+        !m.id ||
+        typeof m.name !== 'string' ||
+        !m.name ||
+        typeof m.pharmacyId !== 'string' ||
+        !pharmacyIdSet.has(m.pharmacyId)
     );
     if (hasCorruptMedicine) {
-      console.warn('[Medi5 Demo Repository] Corrupted medicine catalog detected in localStorage. Falling back to default seed.');
+      console.warn('[Medi5 Demo Repository] Corrupted medicine catalog or missing tenant ownership detected in localStorage. Falling back to default seed.');
       return getInitialSeedState();
     }
 
-    const medicineIdSet = new Set(parsed.medicines.map((m) => m.id));
+    const medicineById = new Map(parsed.medicines.map((m) => [m.id, m]));
 
-    // Integrity check: batches must not contain corrupted, NaN, or negative quantities, or invalid medicine references
-    const hasCorruptBatch = parsed.batches.some(
-      (b) =>
+    // Integrity check: batches must be valid, tenant-owned, and reference a medicine in the SAME tenant.
+    const hasCorruptBatch = parsed.batches.some((b) => {
+      if (
         !b ||
         typeof b.id !== 'string' ||
         typeof b.medicineId !== 'string' ||
-        !medicineIdSet.has(b.medicineId) ||
+        typeof b.pharmacyId !== 'string' ||
+        !pharmacyIdSet.has(b.pharmacyId)
+      ) return true;
+
+      const parentMedicine = medicineById.get(b.medicineId);
+      if (!parentMedicine || parentMedicine.pharmacyId !== b.pharmacyId) return true;
+
+      return (
         typeof b.quantityRemaining !== 'number' ||
         !Number.isFinite(b.quantityRemaining) ||
         b.quantityRemaining < 0 ||
@@ -113,16 +150,30 @@ export function loadDemoInventory(): InventoryState {
         typeof b.mrp !== 'number' ||
         !Number.isFinite(b.mrp) ||
         b.mrp < 0
-    );
+      );
+    });
     if (hasCorruptBatch) {
-      console.warn('[Medi5 Demo Repository] Corrupted batch quantities or invalid medicine references detected in localStorage. Falling back to default seed.');
+      console.warn('[Medi5 Demo Repository] Corrupted batch quantities, invalid medicine references, or cross-tenant batch ownership detected in localStorage. Falling back to default seed.');
       return getInitialSeedState();
     }
 
-    // Integrity check: movements ledger must satisfy accounting invariant (balanceAfter = balanceBefore + quantityChange)
+    const batchById = new Map(parsed.batches.map((b) => [b.id, b]));
+
+    // Integrity check: movements must be tenant-owned and reconcile with a batch in the SAME tenant.
     const validMovementTypes = new Set(['PURCHASE_RECEIPT', 'AUDIT_CORRECTION', 'DAMAGE_WRITE_OFF', 'EXPIRED_WRITE_OFF', 'SALE_DISPENSE']);
     const hasCorruptMovement = parsed.movements.some((m) => {
-      if (!m || typeof m.id !== 'string' || typeof m.batchId !== 'string' || typeof m.medicineId !== 'string') return true;
+      if (
+        !m ||
+        typeof m.id !== 'string' ||
+        typeof m.batchId !== 'string' ||
+        typeof m.medicineId !== 'string' ||
+        typeof m.pharmacyId !== 'string' ||
+        !pharmacyIdSet.has(m.pharmacyId)
+      ) return true;
+
+      const batch = batchById.get(m.batchId);
+      if (!batch || batch.pharmacyId !== m.pharmacyId || batch.medicineId !== m.medicineId) return true;
+
       if (!validMovementTypes.has(m.movementType)) return true;
       if (typeof m.quantityChange !== 'number' || !Number.isFinite(m.quantityChange) || m.quantityChange === 0) return true;
       if (typeof m.balanceBefore !== 'number' || !Number.isFinite(m.balanceBefore) || m.balanceBefore < 0) return true;
@@ -131,18 +182,26 @@ export function loadDemoInventory(): InventoryState {
       return false;
     });
     if (hasCorruptMovement) {
-      console.warn('[Medi5 Demo Repository] Corrupted stock movement ledger detected in localStorage. Falling back to default seed.');
+      console.warn('[Medi5 Demo Repository] Corrupted stock movement ledger or cross-tenant movement detected in localStorage. Falling back to default seed.');
       return getInitialSeedState();
     }
 
-    // Filter valid sales records
+    // Filter valid tenant-owned sales records.
     const validSales: SaleRecord[] = Array.isArray(parsed.sales)
       ? parsed.sales.filter(
           (s) =>
             s &&
             typeof s.id === 'string' &&
+            typeof s.pharmacyId === 'string' &&
+            pharmacyIdSet.has(s.pharmacyId) &&
             typeof s.clientSaleToken === 'string' &&
             Array.isArray(s.items) &&
+            s.items.every(
+              (item) =>
+                item &&
+                typeof item.medicineId === 'string' &&
+                medicineById.get(item.medicineId)?.pharmacyId === s.pharmacyId
+            ) &&
             typeof s.sellingBill === 'number' &&
             Number.isFinite(s.sellingBill) &&
             s.sellingBill >= 0 &&
@@ -153,11 +212,7 @@ export function loadDemoInventory(): InventoryState {
         )
       : [];
 
-    // Validate or default pharmacies
-    const pharmacies = Array.isArray(parsed.pharmacies) && parsed.pharmacies.length > 0
-      ? parsed.pharmacies
-      : JSON.parse(JSON.stringify(MOCK_PHARMACIES));
-    const activePharmacyId = typeof parsed.activePharmacyId === 'string' && pharmacies.some((p: PharmacyProfile) => p.id === parsed.activePharmacyId)
+    const activePharmacyId = typeof parsed.activePharmacyId === 'string' && pharmacyIdSet.has(parsed.activePharmacyId)
       ? parsed.activePharmacyId
       : pharmacies[0].id;
 
@@ -206,19 +261,51 @@ export function saveDemoInventory(state: InventoryState): boolean {
 }
 
 /**
- * Resets demo data back to the clean initial synthetic seed and purges localStorage.
+ * Resets demo data back to the clean initial synthetic seed.
+ *
+ * With no pharmacyId, the whole demo dataset is purged (platform reset).
+ * With a pharmacyId, only that tenant's medicines, batches, movements, and
+ * sales are restored, leaving every other tenant untouched.
  */
-export function resetDemoInventory(): InventoryState {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      window.localStorage.removeItem(DEMO_STORAGE_KEY);
-    } catch {
-      // ignore
+export function resetDemoInventory(pharmacyId?: string): InventoryState {
+  if (!pharmacyId) {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.removeItem(DEMO_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
     }
+    const initial = getInitialSeedState();
+    saveDemoInventory(initial);
+    return initial;
   }
-  const initial = getInitialSeedState();
-  saveDemoInventory(initial);
-  return initial;
+
+  const current = loadDemoInventory();
+  if (!current.pharmacies.some((p) => p.id === pharmacyId)) {
+    throw new Error(`Pharmacy with ID "${pharmacyId}" not found.`);
+  }
+
+  const seed = getInitialSeedState();
+  const scopedReset: InventoryState = {
+    ...current,
+    medicines: [
+      ...current.medicines.filter((m) => m.pharmacyId !== pharmacyId),
+      ...seed.medicines.filter((m) => m.pharmacyId === pharmacyId)
+    ],
+    batches: [
+      ...current.batches.filter((b) => b.pharmacyId !== pharmacyId),
+      ...seed.batches.filter((b) => b.pharmacyId === pharmacyId)
+    ],
+    movements: [
+      ...current.movements.filter((m) => m.pharmacyId !== pharmacyId),
+      ...seed.movements.filter((m) => m.pharmacyId === pharmacyId)
+    ],
+    sales: current.sales.filter((s) => s.pharmacyId !== pharmacyId)
+  };
+
+  saveDemoInventory(scopedReset);
+  return scopedReset;
 }
 
 export function getInitialSeedState(): InventoryState {
@@ -239,7 +326,8 @@ export function getInitialSeedState(): InventoryState {
 export function processStockReceipt(
   arg1: InventoryState | ReceiveStockInput,
   arg2: InventoryState | ReceiveStockInput,
-  actingUser: string = 'Nandan Owner (Demo)'
+  actingUser: string = 'Nandan Owner (Demo)',
+  requestedPharmacyId?: string
 ): {
   nextState: InventoryState;
   newMovement: StockMovement;
@@ -251,6 +339,7 @@ export function processStockReceipt(
 } {
   const currentState = ('medicines' in arg1 ? arg1 : arg2) as InventoryState;
   const input = ('medicines' in arg1 ? arg2 : arg1) as ReceiveStockInput;
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId || input.pharmacyId);
 
   // 1. Validation
   if (
@@ -290,14 +379,15 @@ export function processStockReceipt(
     throw new Error('Validation error: Expiry date format is invalid.');
   }
 
-  // 2. Resolve or create Medicine
+  // 2. Resolve or create Medicine strictly within the active tenant.
   let targetMedicine: Medicine;
   const medicines = [...currentState.medicines];
+  const tenantMedicines = medicines.filter((m) => m.pharmacyId === pharmacyId);
 
   if (input.medicineId) {
-    const existingMed = medicines.find((m) => m.id === input.medicineId);
+    const existingMed = tenantMedicines.find((m) => m.id === input.medicineId);
     if (!existingMed) {
-      throw new Error(`Validation error: Medicine ID "${input.medicineId}" not found.`);
+      throw new Error(`Validation error: Medicine ID "${input.medicineId}" not found in this pharmacy.`);
     }
     targetMedicine = existingMed;
   } else if (input.newMedicine) {
@@ -305,8 +395,8 @@ export function processStockReceipt(
     if (!name || !name.trim()) throw new Error('Validation error: New medicine name is required.');
     if (!strength || !strength.trim()) throw new Error('Validation error: New medicine strength is required.');
 
-    // Check duplicate medicine in master catalog
-    const dupMed = medicines.find(
+    // Check duplicate medicine in this tenant's master catalog only.
+    const dupMed = tenantMedicines.find(
       (m) => 
         m.name.trim().toLowerCase() === name.trim().toLowerCase() && 
         m.strength.trim().toLowerCase() === strength.trim().toLowerCase() &&
@@ -316,8 +406,16 @@ export function processStockReceipt(
       targetMedicine = dupMed;
     } else {
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 16);
+      const idBase = `med-${slug}-${Date.now().toString().slice(-6)}`;
+      let newMedicineId = idBase;
+      let idSuffix = 1;
+      while (medicines.some((m) => m.id === newMedicineId)) {
+        newMedicineId = `${idBase}-${idSuffix}`;
+        idSuffix += 1;
+      }
       targetMedicine = {
-        id: `med-${slug}-${Date.now().toString().slice(-4)}`,
+        id: newMedicineId,
+        pharmacyId,
         name: name.trim(),
         genericName: genericName ? genericName.trim() : name.trim(),
         strength: strength.trim(),
@@ -332,10 +430,13 @@ export function processStockReceipt(
     throw new Error('Validation error: Either medicineId or newMedicine details must be supplied.');
   }
 
-  // 3. Batch conflict detection & resolution
+  // 3. Batch conflict detection & resolution (tenant-scoped)
   const batches = [...currentState.batches];
   const existingBatchIndex = batches.findIndex(
-    (b) => b.medicineId === targetMedicine.id && b.batchNumber.toUpperCase() === cleanBatchNumber
+    (b) =>
+      b.pharmacyId === pharmacyId &&
+      b.medicineId === targetMedicine.id &&
+      b.batchNumber.toUpperCase() === cleanBatchNumber
   );
 
   let affectedBatch: MedicineBatch;
@@ -384,6 +485,7 @@ export function processStockReceipt(
 
     affectedBatch = {
       id: `batch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      pharmacyId,
       medicineId: targetMedicine.id,
       batchNumber: cleanBatchNumber,
       expiryDate: normalizedExpiry,
@@ -401,6 +503,7 @@ export function processStockReceipt(
   // 4. Record Immutable Stock Movement
   const newMovement: StockMovement = {
     id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    pharmacyId,
     batchId: affectedBatch.id,
     medicineId: targetMedicine.id,
     medicineName: `${targetMedicine.name} (${targetMedicine.strength})`,
@@ -441,7 +544,8 @@ export function processStockReceipt(
 export function processStockAdjustment(
   arg1: InventoryState | AdjustStockInput,
   arg2: InventoryState | AdjustStockInput,
-  actingUser: string = 'Nandan Owner (Demo)'
+  actingUser: string = 'Nandan Owner (Demo)',
+  requestedPharmacyId?: string
 ): {
   nextState: InventoryState;
   newMovement: StockMovement;
@@ -451,11 +555,14 @@ export function processStockAdjustment(
 } {
   const currentState = ('batches' in arg1 && 'medicines' in arg1 ? arg1 : arg2) as InventoryState;
   const input = ('batches' in arg1 && 'medicines' in arg1 ? arg2 : arg1) as AdjustStockInput;
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId || input.pharmacyId);
 
   const batches = [...currentState.batches];
-  const batchIndex = batches.findIndex((b) => b.id === input.batchId);
+  const batchIndex = batches.findIndex(
+    (b) => b.id === input.batchId && b.pharmacyId === pharmacyId
+  );
   if (batchIndex < 0) {
-    throw new Error(`Validation error: Batch ID "${input.batchId}" not found.`);
+    throw new Error(`Validation error: Batch ID "${input.batchId}" not found in this pharmacy.`);
   }
 
   const batch = batches[batchIndex];
@@ -492,6 +599,7 @@ export function processStockAdjustment(
   // Append movement
   const newMovement: StockMovement = {
     id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    pharmacyId,
     batchId: batch.id,
     medicineId: batch.medicineId,
     medicineName: medName,
@@ -547,16 +655,20 @@ export function processSaleCheckout(
   currentState: InventoryState,
   input: ProcessSaleInput,
   referenceDate: Date = new Date(),
-  actingUser: string = 'Nandan Owner (Demo)'
+  actingUser: string = 'Nandan Owner (Demo)',
+  requestedPharmacyId?: string
 ): ProcessSaleResult {
-  // 1. Idempotency Token Validation
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId || input.pharmacyId);
+
+  // 1. Idempotency Token Validation (scoped to the active tenant)
   const token = input.clientSaleToken ? input.clientSaleToken.trim() : '';
   if (!token) {
     throw new Error('Validation error: Checkout idempotency token is required.');
   }
 
   const existingSales = currentState.sales || [];
-  const existingSale = existingSales.find((s) => s.clientSaleToken === token);
+  const tenantSales = existingSales.filter((s) => s.pharmacyId === pharmacyId);
+  const existingSale = tenantSales.find((s) => s.clientSaleToken === token);
   if (existingSale) {
     // Check if the sale parameters match the existing sale (using aggregate quantity per medicine)
     const inputCart = input.cart || [];
@@ -609,11 +721,16 @@ export function processSaleCheckout(
       throw new Error('Validation error: Requested quantities must be positive whole packaging units.');
     }
 
-    const med = currentState.medicines.find((m) => m.id === item.medicineId);
+    const med = currentState.medicines.find(
+      (m) => m.id === item.medicineId && m.pharmacyId === pharmacyId
+    );
     if (!med) {
-      throw new Error(`Validation error: Medicine ID "${item.medicineId}" does not exist in the catalog.`);
+      throw new Error(`Validation error: Medicine ID "${item.medicineId}" does not exist in this pharmacy's catalog.`);
     }
   }
+
+  const tenantMedicines = currentState.medicines.filter((m) => m.pharmacyId === pharmacyId);
+  const tenantBatches = currentState.batches.filter((b) => b.pharmacyId === pharmacyId);
 
   // 3. Selling Bill Validation
   if (
@@ -638,7 +755,7 @@ export function processSaleCheckout(
     estimatedCogs,
     isFullyFulfillable,
     unfulfilledLines
-  } = calculateCartAllocations(input.cart, currentState.medicines, currentState.batches, referenceDate);
+  } = calculateCartAllocations(input.cart, tenantMedicines, tenantBatches, referenceDate);
 
   if (!isFullyFulfillable) {
     const missingDesc = unfulfilledLines
@@ -665,7 +782,7 @@ export function processSaleCheckout(
 
   // 7. Generate Stable Unique Sale ID
   const year = referenceDate.getFullYear();
-  const sequenceNum = (existingSales.length + 1).toString().padStart(4, '0');
+  const sequenceNum = (tenantSales.length + 1).toString().padStart(4, '0');
   const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
   const saleId = `INV-${year}-${sequenceNum}-${randSuffix}`;
 
@@ -713,6 +830,7 @@ export function processSaleCheckout(
 
       const movement: StockMovement = {
         id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        pharmacyId,
         batchId: currentBatch.id,
         medicineId: currentBatch.medicineId,
         medicineName: `${line.medicine.name} (${line.medicine.strength})`,
@@ -733,6 +851,7 @@ export function processSaleCheckout(
   // 9. Create Completed Sale Record
   const newSale: SaleRecord = {
     id: saleId,
+    pharmacyId,
     clientSaleToken: token,
     timestamp: referenceDate.toISOString(),
     items: saleItems,
