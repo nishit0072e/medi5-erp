@@ -22,11 +22,14 @@ import {
   SaleItemSummary
 } from '../types/inventory';
 import { PharmacyProfile, UpdatePharmacyInput, AddMemberInput, PharmacyMember } from '../types/pharmacy';
+import { Patient, PatientMedication, WhatsAppReminderLog, CreatePatientInput, AddMedicationInput } from '../types/patient';
 import { MOCK_MEDICINES, MOCK_BATCHES, MOCK_MOVEMENTS } from './mockInventory';
 import { MOCK_PHARMACIES } from './mockPharmacies';
+import { MOCK_PATIENTS, MOCK_PATIENT_MEDICATIONS, MOCK_REMINDER_LOGS } from './mockPatients';
 import { parseExpiryDate } from '../utils/dateUtils';
 import { toPaise, fromPaise } from '../utils/moneyUtils';
 import { calculateCartAllocations } from '../utils/fefoAllocation';
+import { calculateRefillDueDate, getRefillUrgency } from '../utils/whatsappUtils';
 
 export const DEMO_STORAGE_KEY = 'medi5_demo_inventory_v1';
 export const DEMO_STORAGE_VERSION = 2;
@@ -39,6 +42,9 @@ export interface StoredDemoData {
   sales?: SaleRecord[];
   pharmacies?: PharmacyProfile[];
   activePharmacyId?: string;
+  patients?: Patient[];
+  refills?: PatientMedication[];
+  reminderLogs?: WhatsAppReminderLog[];
   lastUpdated: string;
 }
 
@@ -49,6 +55,9 @@ export interface InventoryState {
   sales: SaleRecord[];
   pharmacies: PharmacyProfile[];
   activePharmacyId: string;
+  patients: Patient[];
+  refills: PatientMedication[];
+  reminderLogs: WhatsAppReminderLog[];
 }
 
 export function getTenantInventory(state: InventoryState, pharmacyId: string): InventoryState {
@@ -57,7 +66,10 @@ export function getTenantInventory(state: InventoryState, pharmacyId: string): I
     medicines: state.medicines.filter((m) => m.pharmacyId === pharmacyId),
     batches: state.batches.filter((b) => b.pharmacyId === pharmacyId),
     movements: state.movements.filter((m) => m.pharmacyId === pharmacyId),
-    sales: state.sales.filter((s) => s.pharmacyId === pharmacyId)
+    sales: state.sales.filter((s) => s.pharmacyId === pharmacyId),
+    patients: (state.patients || []).filter((p) => p.pharmacyId === pharmacyId),
+    refills: (state.refills || []).filter((r) => r.pharmacyId === pharmacyId),
+    reminderLogs: (state.reminderLogs || []).filter((l) => l.pharmacyId === pharmacyId)
   };
 }
 
@@ -216,13 +228,63 @@ export function loadDemoInventory(): InventoryState {
       ? parsed.activePharmacyId
       : pharmacies[0].id;
 
+    // Validate or seed patient records
+    const validPatients: Patient[] = Array.isArray(parsed.patients)
+      ? parsed.patients.filter(
+          (p) =>
+            p &&
+            typeof p.id === 'string' &&
+            typeof p.pharmacyId === 'string' &&
+            pharmacyIdSet.has(p.pharmacyId) &&
+            typeof p.name === 'string' &&
+            p.name.trim().length > 0 &&
+            typeof p.phone === 'string'
+        )
+      : JSON.parse(JSON.stringify(MOCK_PATIENTS));
+
+    const patientIdSet = new Set(validPatients.map((p) => p.id));
+
+    // Validate or seed refills, recalculating active urgency status
+    const validRefills: PatientMedication[] = Array.isArray(parsed.refills)
+      ? parsed.refills
+          .filter(
+            (r) =>
+              r &&
+              typeof r.id === 'string' &&
+              typeof r.pharmacyId === 'string' &&
+              pharmacyIdSet.has(r.pharmacyId) &&
+              typeof r.patientId === 'string' &&
+              patientIdSet.has(r.patientId) &&
+              typeof r.medicineName === 'string' &&
+              typeof r.nextRefillDueDate === 'string'
+          )
+          .map((r) => {
+            if (r.status === 'COMPLETED' || r.status === 'PAUSED') return r;
+            const urgency = getRefillUrgency(r.nextRefillDueDate);
+            return { ...r, status: urgency.status };
+          })
+      : JSON.parse(JSON.stringify(MOCK_PATIENT_MEDICATIONS));
+
+    const validReminderLogs: WhatsAppReminderLog[] = Array.isArray(parsed.reminderLogs)
+      ? parsed.reminderLogs.filter(
+          (l) =>
+            l &&
+            typeof l.id === 'string' &&
+            typeof l.pharmacyId === 'string' &&
+            pharmacyIdSet.has(l.pharmacyId)
+        )
+      : JSON.parse(JSON.stringify(MOCK_REMINDER_LOGS));
+
     return {
       medicines: parsed.medicines,
       batches: parsed.batches,
       movements: parsed.movements,
       sales: validSales,
       pharmacies,
-      activePharmacyId
+      activePharmacyId,
+      patients: validPatients,
+      refills: validRefills,
+      reminderLogs: validReminderLogs
     };
   } catch (err) {
     console.error('[Medi5 Demo Repository] Failed to load localStorage demo data:', err);
@@ -250,6 +312,9 @@ export function saveDemoInventory(state: InventoryState): boolean {
       sales: state.sales || [],
       pharmacies: state.pharmacies || [],
       activePharmacyId: state.activePharmacyId || (MOCK_PHARMACIES[0]?.id ?? ''),
+      patients: state.patients || [],
+      refills: state.refills || [],
+      reminderLogs: state.reminderLogs || [],
       lastUpdated: new Date().toISOString()
     };
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(payload));
@@ -301,7 +366,19 @@ export function resetDemoInventory(pharmacyId?: string): InventoryState {
       ...current.movements.filter((m) => m.pharmacyId !== pharmacyId),
       ...seed.movements.filter((m) => m.pharmacyId === pharmacyId)
     ],
-    sales: current.sales.filter((s) => s.pharmacyId !== pharmacyId)
+    sales: current.sales.filter((s) => s.pharmacyId !== pharmacyId),
+    patients: [
+      ...current.patients.filter((p) => p.pharmacyId !== pharmacyId),
+      ...seed.patients.filter((p) => p.pharmacyId === pharmacyId)
+    ],
+    refills: [
+      ...current.refills.filter((r) => r.pharmacyId !== pharmacyId),
+      ...seed.refills.filter((r) => r.pharmacyId === pharmacyId)
+    ],
+    reminderLogs: [
+      ...current.reminderLogs.filter((l) => l.pharmacyId !== pharmacyId),
+      ...seed.reminderLogs.filter((l) => l.pharmacyId === pharmacyId)
+    ]
   };
 
   saveDemoInventory(scopedReset);
@@ -315,7 +392,10 @@ export function getInitialSeedState(): InventoryState {
     movements: JSON.parse(JSON.stringify(MOCK_MOVEMENTS)),
     sales: [],
     pharmacies: JSON.parse(JSON.stringify(MOCK_PHARMACIES)),
-    activePharmacyId: MOCK_PHARMACIES[0].id
+    activePharmacyId: MOCK_PHARMACIES[0].id,
+    patients: JSON.parse(JSON.stringify(MOCK_PATIENTS)),
+    refills: JSON.parse(JSON.stringify(MOCK_PATIENT_MEDICATIONS)),
+    reminderLogs: JSON.parse(JSON.stringify(MOCK_REMINDER_LOGS))
   };
 }
 
@@ -523,7 +603,10 @@ export function processStockReceipt(
     movements: [newMovement, ...currentState.movements],
     sales: currentState.sales || [],
     pharmacies: currentState.pharmacies || [],
-    activePharmacyId: currentState.activePharmacyId || ''
+    activePharmacyId: currentState.activePharmacyId || '',
+    patients: currentState.patients || [],
+    refills: currentState.refills || [],
+    reminderLogs: currentState.reminderLogs || []
   };
 
   return {
@@ -619,7 +702,10 @@ export function processStockAdjustment(
     movements: [newMovement, ...currentState.movements],
     sales: currentState.sales || [],
     pharmacies: currentState.pharmacies || [],
-    activePharmacyId: currentState.activePharmacyId || ''
+    activePharmacyId: currentState.activePharmacyId || '',
+    patients: currentState.patients || [],
+    refills: currentState.refills || [],
+    reminderLogs: currentState.reminderLogs || []
   };
 
   return {
@@ -871,7 +957,10 @@ export function processSaleCheckout(
     movements: [...newMovements, ...currentState.movements],
     sales: [newSale, ...existingSales],
     pharmacies: currentState.pharmacies || [],
-    activePharmacyId: currentState.activePharmacyId || ''
+    activePharmacyId: currentState.activePharmacyId || '',
+    patients: currentState.patients || [],
+    refills: currentState.refills || [],
+    reminderLogs: currentState.reminderLogs || []
   };
 
   return {
@@ -1079,5 +1168,307 @@ export function removePharmacyStaffMember(
   return {
     ...currentState,
     pharmacies
+  };
+}
+
+// ============================================================================
+// Phase 3: Patient & WhatsApp Refill Reminders Operations
+// ============================================================================
+
+/**
+ * Registers a new patient with optional initial chronic medication.
+ * Strictly scoped to the specified pharmacyId.
+ */
+export function createPatient(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  input: CreatePatientInput
+): {
+  nextState: InventoryState;
+  patient: Patient;
+  initialMedication?: PatientMedication;
+} {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+
+  if (!input.name || !input.name.trim()) {
+    throw new Error('Patient name is required.');
+  }
+
+  const cleanPhone = input.phone.replace(/\D/g, '');
+  if (cleanPhone.length < 10) {
+    throw new Error('A valid 10-digit mobile number is required for WhatsApp refill reminders.');
+  }
+
+  // Prevent duplicate patient phone numbers within the SAME pharmacy tenant
+  const existingPatient = (currentState.patients || []).find(
+    (p) => p.pharmacyId === pharmacyId && p.phone.replace(/\D/g, '') === cleanPhone
+  );
+  if (existingPatient) {
+    throw new Error(`A patient with mobile number "${input.phone}" is already registered at this pharmacy.`);
+  }
+
+  const now = new Date().toISOString();
+  const patientId = `pat-${pharmacyId.slice(-6)}-${Date.now().toString().slice(-6)}`;
+
+  const newPatient: Patient = {
+    id: patientId,
+    pharmacyId,
+    name: input.name.trim(),
+    phone: cleanPhone,
+    age: input.age,
+    gender: input.gender,
+    address: input.address?.trim() || undefined,
+    notes: input.notes?.trim() || undefined,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  let newMedication: PatientMedication | undefined;
+  const updatedRefills = [...(currentState.refills || [])];
+
+  if (input.initialMedication) {
+    const med = input.initialMedication;
+    const dueDate = calculateRefillDueDate(med.lastDispensedDate, med.daysSupply);
+    const urgency = getRefillUrgency(dueDate);
+
+    newMedication = {
+      id: `refill-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5)}`,
+      pharmacyId,
+      patientId: newPatient.id,
+      medicineId: med.medicineId,
+      medicineName: med.medicineName,
+      strength: med.strength,
+      dosageForm: med.dosageForm,
+      dailyDosage: med.dailyDosage,
+      quantityPerRefill: med.quantityPerRefill,
+      daysSupply: med.daysSupply,
+      lastDispensedDate: med.lastDispensedDate,
+      nextRefillDueDate: dueDate,
+      status: urgency.status,
+      reminderCount: 0
+    };
+
+    updatedRefills.push(newMedication);
+  }
+
+  const nextState: InventoryState = {
+    ...currentState,
+    patients: [...(currentState.patients || []), newPatient],
+    refills: updatedRefills
+  };
+
+  return {
+    nextState,
+    patient: newPatient,
+    initialMedication: newMedication
+  };
+}
+
+/**
+ * Updates basic demographic details of a patient.
+ */
+export function updatePatient(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  patientId: string,
+  input: Partial<Patient>
+): { nextState: InventoryState; patient: Patient } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const patientIndex = (currentState.patients || []).findIndex(
+    (p) => p.id === patientId && p.pharmacyId === pharmacyId
+  );
+  if (patientIndex < 0) {
+    throw new Error('Patient record not found for this pharmacy tenant.');
+  }
+
+  const existing = currentState.patients[patientIndex];
+  const updated: Patient = {
+    ...existing,
+    ...input,
+    id: existing.id,
+    pharmacyId: existing.pharmacyId,
+    updatedAt: new Date().toISOString()
+  };
+
+  const updatedPatients = [...currentState.patients];
+  updatedPatients[patientIndex] = updated;
+
+  return {
+    nextState: {
+      ...currentState,
+      patients: updatedPatients
+    },
+    patient: updated
+  };
+}
+
+/**
+ * Deletes a patient record and cleans up associated medication schedules.
+ */
+export function deletePatient(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  patientId: string
+): InventoryState {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+
+  return {
+    ...currentState,
+    patients: (currentState.patients || []).filter(
+      (p) => !(p.id === patientId && p.pharmacyId === pharmacyId)
+    ),
+    refills: (currentState.refills || []).filter(
+      (r) => !(r.patientId === patientId && r.pharmacyId === pharmacyId)
+    )
+  };
+}
+
+/**
+ * Adds a new chronic medication / refill schedule to an existing patient.
+ */
+export function addPatientMedication(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  patientId: string,
+  input: AddMedicationInput
+): { nextState: InventoryState; medication: PatientMedication } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const patient = (currentState.patients || []).find(
+    (p) => p.id === patientId && p.pharmacyId === pharmacyId
+  );
+  if (!patient) {
+    throw new Error('Patient record not found in this pharmacy tenant.');
+  }
+
+  if (!input.medicineName || !input.medicineName.trim()) {
+    throw new Error('Medicine name is required.');
+  }
+
+  const dueDate = calculateRefillDueDate(input.lastDispensedDate, input.daysSupply);
+  const urgency = getRefillUrgency(dueDate);
+
+  const newMedication: PatientMedication = {
+    id: `refill-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5)}`,
+    pharmacyId,
+    patientId,
+    medicineId: input.medicineId,
+    medicineName: input.medicineName.trim(),
+    strength: input.strength || '',
+    dosageForm: input.dosageForm || 'Tablet',
+    dailyDosage: input.dailyDosage || '1 tab daily',
+    quantityPerRefill: Math.max(1, input.quantityPerRefill || 1),
+    daysSupply: Math.max(1, input.daysSupply || 30),
+    lastDispensedDate: input.lastDispensedDate,
+    nextRefillDueDate: dueDate,
+    status: urgency.status,
+    reminderCount: 0
+  };
+
+  return {
+    nextState: {
+      ...currentState,
+      refills: [...(currentState.refills || []), newMedication]
+    },
+    medication: newMedication
+  };
+}
+
+/**
+ * Removes a chronic medication / refill reminder.
+ */
+export function deletePatientMedication(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  medicationId: string
+): InventoryState {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+
+  return {
+    ...currentState,
+    refills: (currentState.refills || []).filter(
+      (r) => !(r.id === medicationId && r.pharmacyId === pharmacyId)
+    )
+  };
+}
+
+/**
+ * Records a user-initiated WhatsApp reminder in the audit log and updates reminder counters.
+ */
+export function recordWhatsAppReminderSent(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  logData: Omit<WhatsAppReminderLog, 'id' | 'pharmacyId' | 'sentAt'>
+): { nextState: InventoryState; log: WhatsAppReminderLog } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const now = new Date().toISOString();
+
+  const newLog: WhatsAppReminderLog = {
+    id: `log-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5)}`,
+    pharmacyId,
+    sentAt: now,
+    ...logData
+  };
+
+  const updatedRefills = (currentState.refills || []).map((r) => {
+    if (r.id === logData.medicationId && r.pharmacyId === pharmacyId) {
+      return {
+        ...r,
+        lastReminderSentAt: now,
+        reminderCount: (r.reminderCount || 0) + 1
+      };
+    }
+    return r;
+  });
+
+  return {
+    nextState: {
+      ...currentState,
+      refills: updatedRefills,
+      reminderLogs: [newLog, ...(currentState.reminderLogs || [])]
+    },
+    log: newLog
+  };
+}
+
+/**
+ * Marks a chronic refill as dispensed (e.g. customer bought refill),
+ * resetting the reminder cycle forward by daysSupply.
+ */
+export function markRefillDispensed(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  medicationId: string,
+  dispensedDate?: string
+): { nextState: InventoryState; medication: PatientMedication } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const targetIndex = (currentState.refills || []).findIndex(
+    (r) => r.id === medicationId && r.pharmacyId === pharmacyId
+  );
+  if (targetIndex < 0) {
+    throw new Error('Refill schedule record not found.');
+  }
+
+  const existing = currentState.refills[targetIndex];
+  const newLastDispensed = dispensedDate || new Date().toISOString().split('T')[0];
+  const newDueDate = calculateRefillDueDate(newLastDispensed, existing.daysSupply);
+  const urgency = getRefillUrgency(newDueDate);
+
+  const updated: PatientMedication = {
+    ...existing,
+    lastDispensedDate: newLastDispensed,
+    nextRefillDueDate: newDueDate,
+    status: urgency.status,
+    reminderCount: 0
+  };
+
+  const updatedRefills = [...currentState.refills];
+  updatedRefills[targetIndex] = updated;
+
+  return {
+    nextState: {
+      ...currentState,
+      refills: updatedRefills
+    },
+    medication: updated
   };
 }

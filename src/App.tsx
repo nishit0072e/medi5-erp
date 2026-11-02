@@ -11,6 +11,7 @@ import { StockLedgerView } from './components/StockLedgerView';
 import { PosScreen } from './components/PosScreen';
 import { SaleReceiptModal } from './components/SaleReceiptModal';
 import { PharmacySettingsView } from './components/PharmacySettingsView';
+import { PatientsView } from './components/PatientsView';
 import { LoginScreen } from './components/LoginScreen';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
 import { getStoredSession, clearStoredSession, AUTH_SESSION_KEY } from './utils/authService';
@@ -27,9 +28,17 @@ import {
   switchPharmacyTenant,
   createPharmacyTenant,
   addPharmacyStaffMember,
-  removePharmacyStaffMember
+  removePharmacyStaffMember,
+  createPatient,
+  updatePatient,
+  deletePatient,
+  addPatientMedication,
+  deletePatientMedication,
+  recordWhatsAppReminderSent,
+  markRefillDispensed
 } from './data/demoRepository';
 import { UpdatePharmacyInput, AddMemberInput, AuthSession } from './types/pharmacy';
+import { CreatePatientInput, AddMedicationInput, Patient } from './types/patient';
 import { calculateAllSummaries, calculateInventoryKpis } from './utils/inventoryCalculations';
 import { 
   StockFilter, 
@@ -78,11 +87,25 @@ export const App: React.FC = () => {
     () => getTenantInventory(demoState, effectivePharmacyId),
     [demoState, effectivePharmacyId]
   );
-  const { medicines, batches, movements, sales } = tenantInventory;
+  const { 
+    medicines, 
+    batches, 
+    movements, 
+    sales,
+    patients = [],
+    refills = [],
+    reminderLogs = []
+  } = tenantInventory;
 
-  // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'settings')
-  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'settings'>('inventory');
-  const activeTab: 'inventory' | 'settings' = activeView === 'settings' ? 'settings' : 'inventory';
+  // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'patients' | 'settings')
+  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'settings'>('inventory');
+  const activeTab: 'inventory' | 'patients' | 'analytics' | 'settings' = 
+    activeView === 'settings' ? 'settings' : activeView === 'patients' ? 'patients' : 'inventory';
+
+  // Urgent Refills Count
+  const refillsDueCount = useMemo(() => {
+    return refills.filter((r) => r.status === 'DUE_TODAY' || r.status === 'OVERDUE').length;
+  }, [refills]);
 
   // 3. Search & Filters for Inventory View
   const [searchQuery, setSearchQuery] = useState('');
@@ -425,6 +448,86 @@ export const App: React.FC = () => {
     }
   };
 
+  // =========================================================================
+  // Patient & WhatsApp Refill Reminders Handlers (Phase 3)
+  // =========================================================================
+  const handleCreatePatient = (input: CreatePatientInput) => {
+    try {
+      const result = createPatient(demoState, activePharmacy?.id, input);
+      if (!persistTenantChange(result.nextState, 'Patient registration failed: unable to persist changes.')) return;
+      showToast('success', `Registered patient "${result.patient.name}" successfully.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to register patient');
+    }
+  };
+
+  const handleUpdatePatient = (patientId: string, input: Partial<Patient>) => {
+    try {
+      const result = updatePatient(demoState, activePharmacy?.id, patientId, input);
+      if (!persistTenantChange(result.nextState, 'Patient update failed: unable to persist changes.')) return;
+      showToast('success', 'Patient record updated successfully.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to update patient');
+    }
+  };
+
+  const handleDeletePatient = (patientId: string) => {
+    try {
+      const nextState = deletePatient(demoState, activePharmacy?.id, patientId);
+      if (!persistTenantChange(nextState, 'Patient deletion failed: unable to persist changes.')) return;
+      showToast('success', 'Patient record and reminders removed.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to delete patient');
+    }
+  };
+
+  const handleAddMedication = (patientId: string, input: AddMedicationInput) => {
+    try {
+      const result = addPatientMedication(demoState, activePharmacy?.id, patientId, input);
+      if (!persistTenantChange(result.nextState, 'Medication schedule failed: unable to persist changes.')) return;
+      showToast('success', `Added ${result.medication.medicineName} to refill schedule.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to add medication');
+    }
+  };
+
+  const handleDeleteMedication = (medicationId: string) => {
+    try {
+      const nextState = deletePatientMedication(demoState, activePharmacy?.id, medicationId);
+      if (!persistTenantChange(nextState, 'Medication deletion failed: unable to persist changes.')) return;
+      showToast('success', 'Medication removed from refill schedule.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to remove medication');
+    }
+  };
+
+  const handleRecordWhatsAppSent = (logData: {
+    patientId: string;
+    medicationId: string;
+    patientName: string;
+    patientPhone: string;
+    messageText: string;
+    initiatedByStaff: string;
+  }) => {
+    try {
+      const result = recordWhatsAppReminderSent(demoState, activePharmacy?.id, logData);
+      if (!persistTenantChange(result.nextState, 'Audit log failed: unable to persist changes.')) return;
+      showToast('success', `WhatsApp reminder logged for ${logData.patientName}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to record WhatsApp reminder');
+    }
+  };
+
+  const handleMarkRefillDispensed = (medicationId: string) => {
+    try {
+      const result = markRefillDispensed(demoState, activePharmacy?.id, medicationId);
+      if (!persistTenantChange(result.nextState, 'Refill update failed: unable to persist changes.')) return;
+      showToast('success', `Refill marked dispensed for ${result.medication.medicineName}. Next cycle scheduled!`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to mark refill dispensed');
+    }
+  };
+
   // Unauthenticated Barrier -> Render Login Screen with strict authentication
   if (!session) {
     return <LoginScreen onLoginSuccess={(newSession) => setSession(newSession)} />;
@@ -493,6 +596,8 @@ export const App: React.FC = () => {
         onResetDemo={handleResetDemo}
         ledgerCount={movements.length}
         salesCount={sales.length}
+        patientsCount={patients.length}
+        refillsDueCount={refillsDueCount}
         currentUser={session.user}
         onLogout={handleLogout}
         isSuperAdminInspecting={Boolean(isSuperAdmin && inspectingPharmacyId)}
@@ -508,7 +613,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* MAIN VIEW AREA: INVENTORY, POS COUNTER, STOCK LEDGER OR SETTINGS */}
+      {/* MAIN VIEW AREA: INVENTORY, POS COUNTER, STOCK LEDGER, PATIENTS OR SETTINGS */}
       {activeView === 'inventory' ? (
         <>
           {/* Search Input & Filter Pills */}
@@ -559,6 +664,26 @@ export const App: React.FC = () => {
             }}
           />
         </main>
+      ) : activeView === 'patients' ? (
+        /* Phase 3: Patients & WhatsApp Refill Reminders Screen */
+        <main className="inventory-list-section" role="region" aria-label="Patients and Refills">
+          <PatientsView
+            patients={patients}
+            refills={refills}
+            reminderLogs={reminderLogs}
+            medicines={medicines}
+            pharmacy={activePharmacy}
+            staffUser={session.user.name}
+            onCreatePatient={handleCreatePatient}
+            onUpdatePatient={handleUpdatePatient}
+            onDeletePatient={handleDeletePatient}
+            onAddMedication={handleAddMedication}
+            onDeleteMedication={handleDeleteMedication}
+            onRecordWhatsAppSent={handleRecordWhatsAppSent}
+            onMarkDispensed={handleMarkRefillDispensed}
+            onBackToInventory={() => setActiveView('inventory')}
+          />
+        </main>
       ) : activeView === 'settings' ? (
         /* Multi-tenant Pharmacy Profile & Settings View (Phase 2) */
         <main className="inventory-list-section" role="region" aria-label="Pharmacy Profile Settings">
@@ -590,11 +715,14 @@ export const App: React.FC = () => {
         onTabChange={(tab) => {
           if (tab === 'inventory') {
             setActiveView('inventory');
+          } else if (tab === 'patients') {
+            setActiveView('patients');
           } else if (tab === 'settings') {
             setActiveView('settings');
           }
         }} 
         inventoryCount={filteredSummaries.length}
+        refillAlertCount={refillsDueCount}
       />
 
       {/* Receive Stock Modal */}

@@ -5,12 +5,14 @@ interface BottomNavProps {
   activeTab: 'inventory' | 'patients' | 'analytics' | 'settings';
   onTabChange: (tab: 'inventory' | 'patients' | 'analytics' | 'settings') => void;
   inventoryCount?: number;
+  refillAlertCount?: number;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onTabChange,
-  inventoryCount = 6
+  inventoryCount = 6,
+  refillAlertCount = 0
 }) => {
   return (
     <nav className="bottom-nav" aria-label="Main Navigation">
@@ -26,14 +28,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       </button>
 
       <button
-        className={`nav-item disabled`}
+        className={`nav-item ${activeTab === 'patients' ? 'active' : ''}`}
         type="button"
-        title="Patients module will be built in Phase 3"
-        aria-disabled="true"
-        onClick={() => alert('Patients & WhatsApp Refills module is part of Phase 3.')}
+        onClick={() => onTabChange('patients')}
+        aria-label="Patients & WhatsApp Refills Tab"
       >
         <Users size={20} />
         <span>Patients</span>
+        {refillAlertCount > 0 && <span className="nav-badge-pill nav-badge-amber">{refillAlertCount}</span>}
       </button>
 
       <button

@@ -10,19 +10,22 @@ import {
   Building2,
   Crown,
   LogOut,
-  ArrowRight
+  ArrowRight,
+  Users
 } from 'lucide-react';
 import { AuthUser } from '../types/pharmacy';
 
 interface HeaderProps {
   pharmacyName?: string;
   location?: string;
-  activeView: 'inventory' | 'pos' | 'ledger' | 'settings';
-  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'settings') => void;
+  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'settings';
+  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'settings') => void;
   onOpenReceive: () => void;
   onResetDemo: () => void;
   ledgerCount: number;
   salesCount?: number;
+  patientsCount?: number;
+  refillsDueCount?: number;
   currentUser?: AuthUser;
   onLogout?: () => void;
   isSuperAdminInspecting?: boolean;
@@ -38,6 +41,8 @@ export const Header: React.FC<HeaderProps> = ({
   onResetDemo,
   ledgerCount,
   salesCount = 0,
+  patientsCount = 0,
+  refillsDueCount = 0,
   currentUser,
   onLogout,
   isSuperAdminInspecting = false,
@@ -163,6 +168,22 @@ export const Header: React.FC<HeaderProps> = ({
             <History size={15} />
             <span title="Stock Ledger">Ledger</span>
             <span className="tab-count-badge">{ledgerCount}</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'patients'}
+            className={`view-tab-btn ${activeView === 'patients' ? 'active' : ''}`}
+            onClick={() => onViewChange('patients')}
+          >
+            <Users size={15} />
+            <span title="Patients & WhatsApp Refills">Patients</span>
+            {refillsDueCount > 0 ? (
+              <span className="tab-count-badge pos-tab-badge">{refillsDueCount}</span>
+            ) : patientsCount > 0 ? (
+              <span className="tab-count-badge">{patientsCount}</span>
+            ) : null}
           </button>
 
           <button
