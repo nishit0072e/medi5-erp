@@ -3,17 +3,43 @@
  * Strict multi-tenant isolation by pharmacyId.
  */
 
-export type RefillStatus = 'UPCOMING' | 'DUE_TODAY' | 'OVERDUE' | 'COMPLETED' | 'PAUSED';
+export type RefillStatus = 'UPCOMING' | 'DUE_TODAY' | 'OVERDUE' | 'COMPLETED' | 'PAUSED' | 'SNOOZED' | 'CANCELLED';
+
+export type PatientStatus = 'ACTIVE' | 'INACTIVE';
+
+export type CommunicationPreference = 'WHATSAPP' | 'SMS' | 'CALL' | 'NONE';
 
 export interface Patient {
   id: string;
   pharmacyId: string;
   name: string;
   phone: string;
+  email?: string;
   age?: number;
   gender?: 'MALE' | 'FEMALE' | 'OTHER';
   address?: string;
   notes?: string;
+  status: PatientStatus;
+  communicationPreference: CommunicationPreference;
+  consentGiven: boolean;
+  consentDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PrescriptionReference {
+  id: string;
+  pharmacyId: string;
+  patientId: string;
+  referenceNumber: string;
+  issueDate: string;
+  prescriberName?: string;
+  prescriberRegistration?: string;
+  prescriberContact?: string;
+  hospitalClinic?: string;
+  expiryDate?: string;
+  notes?: string;
+  attachmentUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,10 +77,13 @@ export interface WhatsAppReminderLog {
 export interface CreatePatientInput {
   name: string;
   phone: string;
+  email?: string;
   age?: number;
   gender?: 'MALE' | 'FEMALE' | 'OTHER';
   address?: string;
   notes?: string;
+  communicationPreference?: CommunicationPreference;
+  consentGiven?: boolean;
   initialMedication?: {
     medicineId: string;
     medicineName: string;
@@ -77,3 +106,17 @@ export interface AddMedicationInput {
   daysSupply: number;
   lastDispensedDate: string;
 }
+
+export interface UpdatePatientInput {
+  name?: string;
+  phone?: string;
+  email?: string;
+  age?: number;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  address?: string;
+  notes?: string;
+  status?: PatientStatus;
+  communicationPreference?: CommunicationPreference;
+  consentGiven?: boolean;
+}
+

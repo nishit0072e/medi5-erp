@@ -218,6 +218,7 @@ export interface SaleRecord {
   pharmacyId: string; // Tenant that owns this sale
   clientSaleToken: string; // Idempotency token
   timestamp: string; // ISO string
+  patientId?: string; // Optional linked patient/customer for purchase history
   items: SaleItemSummary[];
   totalBillMrp: number;           // Standard MRP sum
   sellingBill: number;            // Actual amount charged
@@ -239,5 +240,6 @@ export interface ProcessSaleInput {
   sellingBill: number;
   tenderType?: 'CASH' | 'UPI' | 'CARD';
   staffUser?: string;
+  patientId?: string;
   confirmedBelowCost?: boolean;
 }

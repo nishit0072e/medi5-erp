@@ -11,15 +11,16 @@ import {
   Crown,
   LogOut,
   ArrowRight,
-  Users
+  Users,
+  BarChart2
 } from 'lucide-react';
 import { AuthUser } from '../types/pharmacy';
 
 interface HeaderProps {
   pharmacyName?: string;
   location?: string;
-  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'settings';
-  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'settings') => void;
+  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings';
+  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings') => void;
   onOpenReceive: () => void;
   onResetDemo: () => void;
   ledgerCount: number;
@@ -184,6 +185,17 @@ export const Header: React.FC<HeaderProps> = ({
             ) : patientsCount > 0 ? (
               <span className="tab-count-badge">{patientsCount}</span>
             ) : null}
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'analytics'}
+            className={`view-tab-btn ${activeView === 'analytics' ? 'active' : ''}`}
+            onClick={() => onViewChange('analytics')}
+          >
+            <BarChart2 size={15} />
+            <span title="Financial Health & Leakage Analytics">Analytics</span>
           </button>
 
           <button

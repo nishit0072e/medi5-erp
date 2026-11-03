@@ -10,7 +10,15 @@ import {
   addPatientMedication, 
   deletePatientMedication, 
   recordWhatsAppReminderSent, 
-  markRefillDispensed 
+  markRefillDispensed,
+  snoozeRefill,
+  cancelRefill,
+  completeRefill,
+  reactivateRefill,
+  createPrescription,
+  updatePrescription,
+  deletePrescription,
+  linkSaleToPatient
 } from '../data/demoRepository';
 import { 
   formatWhatsAppPhoneNumber, 
@@ -293,6 +301,168 @@ describe('Phase 3: Patients & WhatsApp Refill Reminders Module', () => {
 
       expect(nextState.patients.some((p) => p.id === 'pat-nandan-01')).toBe(false);
       expect(nextState.refills.some((r) => r.patientId === 'pat-nandan-01')).toBe(false);
+    });
+  });
+
+  describe('Refill Lifecycle Operations', () => {
+    it('snoozes a refill by 7 days and sets status to SNOOZED', () => {
+      const state = getInitialSeedState();
+      const result = snoozeRefill(state, 'pharm-nandan-kolkata', 'refill-nandan-01', 7);
+
+      expect(result.medication.status).toBe('SNOOZED');
+      expect(result.medication.nextRefillDueDate).toBe('2026-11-10');
+      expect(result.nextState.refills.find((r) => r.id === 'refill-nandan-01')?.status).toBe('SNOOZED');
+    });
+
+    it('cancels a refill, setting status to CANCELLED', () => {
+      const state = getInitialSeedState();
+      const result = cancelRefill(state, 'pharm-nandan-kolkata', 'refill-nandan-02');
+
+      expect(result.medication.status).toBe('CANCELLED');
+      expect(result.nextState.refills.find((r) => r.id === 'refill-nandan-02')?.status).toBe('CANCELLED');
+    });
+
+    it('completes a refill, setting status to COMPLETED', () => {
+      const state = getInitialSeedState();
+      const result = completeRefill(state, 'pharm-nandan-kolkata', 'refill-nandan-03');
+
+      expect(result.medication.status).toBe('COMPLETED');
+      expect(result.nextState.refills.find((r) => r.id === 'refill-nandan-03')?.status).toBe('COMPLETED');
+    });
+
+    it('reactivates a terminal refill (CANCELLED/COMPLETED/SNOOZED) recalculating urgency', () => {
+      const state = getInitialSeedState();
+
+      // First cancel
+      const cancelled = cancelRefill(state, 'pharm-nandan-kolkata', 'refill-nandan-01');
+      expect(cancelled.medication.status).toBe('CANCELLED');
+
+      // Then reactivate
+      const reactivated = reactivateRefill(cancelled.nextState, 'pharm-nandan-kolkata', 'refill-nandan-01');
+      expect(reactivated.medication.status).not.toBe('CANCELLED');
+      expect(reactivated.medication.status).not.toBe('COMPLETED');
+      expect(reactivated.medication.nextRefillDueDate).toBe('2026-11-03'); // unchanged - snooze moves date
+    });
+  });
+
+  describe('Prescription CRUD Operations', () => {
+    it('creates a prescription for an existing patient', () => {
+      const state = getInitialSeedState();
+      const result = createPrescription(state, 'pharm-nandan-kolkata', {
+        patientId: 'pat-nandan-01',
+        referenceNumber: 'RX-TEST-001',
+        issueDate: '2026-11-01',
+        prescriberName: 'Dr. Test Prescriber',
+        prescriberRegistration: 'WBMC-12345',
+        hospitalClinic: 'Test Hospital',
+        expiryDate: '2026-11-15',
+        notes: 'Test prescription'
+      });
+
+      expect(result.prescription.referenceNumber).toBe('RX-TEST-001');
+      expect(result.prescription.patientId).toBe('pat-nandan-01');
+      expect(result.prescription.pharmacyId).toBe('pharm-nandan-kolkata');
+      expect(result.nextState.prescriptions.some((p) => p.id === result.prescription.id)).toBe(true);
+    });
+
+    it('rejects creating a prescription with duplicate reference number in same pharmacy', () => {
+      const state = getInitialSeedState();
+      const input = {
+        patientId: 'pat-nandan-01',
+        referenceNumber: 'RX-DUPLICATE-001',
+        issueDate: '2026-11-01'
+      };
+      const afterFirst = createPrescription(state, 'pharm-nandan-kolkata', input);
+      expect(() => {
+        createPrescription(afterFirst.nextState, 'pharm-nandan-kolkata', input);
+      }).toThrow(`A prescription with reference number "${input.referenceNumber}" already exists.`);
+    });
+
+    it('updates a prescription', () => {
+      const state = getInitialSeedState();
+      const created = createPrescription(state, 'pharm-nandan-kolkata', {
+        patientId: 'pat-nandan-01',
+        referenceNumber: 'RX-UPDATE-001',
+        issueDate: '2026-11-01'
+      });
+
+      const updated = updatePrescription(created.nextState, 'pharm-nandan-kolkata', created.prescription.id, {
+        notes: 'Updated notes',
+        prescriberName: 'Dr. Updated'
+      });
+
+      expect(updated.prescription.notes).toBe('Updated notes');
+      expect(updated.prescription.prescriberName).toBe('Dr. Updated');
+      expect(updated.prescription.updatedAt).toBeDefined();
+    });
+
+    it('deletes a prescription', () => {
+      const state = getInitialSeedState();
+      const created = createPrescription(state, 'pharm-nandan-kolkata', {
+        patientId: 'pat-nandan-01',
+        referenceNumber: 'RX-DELETE-001',
+        issueDate: '2026-11-01'
+      });
+
+      const afterDelete = deletePrescription(created.nextState, 'pharm-nandan-kolkata', created.prescription.id);
+      expect(afterDelete.prescriptions.some((p) => p.id === created.prescription.id)).toBe(false);
+    });
+  });
+
+  describe('Sale-Patient Linkage', () => {
+    it('links an existing unassigned sale to a patient', () => {
+      const state = getInitialSeedState();
+      const fakeSale = {
+        id: 'sale-test-001',
+        pharmacyId: 'pharm-nandan-kolkata',
+        timestamp: '2026-11-02T10:00:00.000Z',
+        items: [],
+        sellingBill: 100,
+        totalBillMrp: 120,
+        discount: 20,
+        estimatedCogs: 50,
+        estimatedGrossProfit: 50,
+        tenderType: 'CASH',
+        staffUser: 'Test Staff',
+        batchAllocations: []
+      } as any;
+
+      const stateWithSale = { ...state, sales: [...state.sales, fakeSale] };
+      const result = linkSaleToPatient(stateWithSale, 'pharm-nandan-kolkata', fakeSale.id, 'pat-nandan-01');
+
+      const linkedSale = result.sales.find((s) => s.id === fakeSale.id);
+      expect(linkedSale?.patientId).toBe('pat-nandan-01');
+    });
+
+    it('rejects linking a sale already assigned to another patient', () => {
+      const state = getInitialSeedState();
+      const fakeSale = {
+        id: 'sale-test-002',
+        pharmacyId: 'pharm-nandan-kolkata',
+        timestamp: '2026-11-02T10:00:00.000Z',
+        items: [],
+        sellingBill: 100,
+        totalBillMrp: 120,
+        discount: 20,
+        estimatedCogs: 50,
+        estimatedGrossProfit: 50,
+        tenderType: 'CASH',
+        staffUser: 'Test Staff',
+        batchAllocations: [],
+        patientId: 'pat-nandan-02'
+      } as any;
+
+      const stateWithSale = { ...state, sales: [...state.sales, fakeSale] };
+      expect(() => {
+        linkSaleToPatient(stateWithSale, 'pharm-nandan-kolkata', fakeSale.id, 'pat-nandan-01');
+      }).toThrow('already linked to another patient');
+    });
+
+    it('rejects linking a non-existent sale', () => {
+      const state = getInitialSeedState();
+      expect(() => {
+        linkSaleToPatient(state, 'pharm-nandan-kolkata', 'non-existent-sale', 'pat-nandan-01');
+      }).toThrow('Sale record not found for this pharmacy tenant');
     });
   });
 

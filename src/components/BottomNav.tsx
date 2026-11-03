@@ -1,18 +1,20 @@
 import React from 'react';
-import { Package, Users, BarChart3, Settings } from 'lucide-react';
+import { Package, Users, BarChart3, Settings, AlertTriangle } from 'lucide-react';
 
 interface BottomNavProps {
   activeTab: 'inventory' | 'patients' | 'analytics' | 'settings';
   onTabChange: (tab: 'inventory' | 'patients' | 'analytics' | 'settings') => void;
   inventoryCount?: number;
   refillAlertCount?: number;
+  leakageScore?: number;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onTabChange,
   inventoryCount = 6,
-  refillAlertCount = 0
+  refillAlertCount = 0,
+  leakageScore = 0
 }) => {
   return (
     <nav className="bottom-nav" aria-label="Main Navigation">
@@ -39,14 +41,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       </button>
 
       <button
-        className={`nav-item disabled`}
+        className={`nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
         type="button"
-        title="Analytics module will be built in Phase 4"
-        aria-disabled="true"
-        onClick={() => alert('Financial Health & Leakage Analytics is part of Phase 4.')}
+        onClick={() => onTabChange('analytics')}
+        aria-label="Financial Health & Leakage Analytics Tab"
       >
         <BarChart3 size={20} />
         <span>Analytics</span>
+        {leakageScore > 50 && (
+          <span className="nav-badge-pill nav-badge-amber">
+            <AlertTriangle size={10} /> {leakageScore}
+          </span>
+        )}
       </button>
 
       <button

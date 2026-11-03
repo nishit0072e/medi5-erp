@@ -11,9 +11,11 @@ import {
 import { Patient, PatientMedication } from '../types/patient';
 import { PharmacyProfile } from '../types/pharmacy';
 import { 
-  generateRefillReminderMessage, 
+  generateWhatsAppTemplateMessage, 
+  getWhatsAppTemplateLabel,
   buildWhatsAppLink, 
-  formatWhatsAppPhoneNumber 
+  formatWhatsAppPhoneNumber,
+  WhatsAppTemplateType
 } from '../utils/whatsappUtils';
 
 interface WhatsAppReminderModalProps {
@@ -44,17 +46,26 @@ export const WhatsAppReminderModal: React.FC<WhatsAppReminderModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const defaultMessage = generateRefillReminderMessage({
-    patientName: patient.name,
-    pharmacyName: pharmacy.name,
-    pharmacyPhone: pharmacy.phone,
-    medicineName: medication.medicineName,
-    strength: medication.strength,
-    nextRefillDueDate: medication.nextRefillDueDate
-  });
+  const buildMessage = (template: WhatsAppTemplateType) =>
+    generateWhatsAppTemplateMessage(template, {
+      patientName: patient.name,
+      pharmacyName: pharmacy.name,
+      pharmacyPhone: pharmacy.phone,
+      medicineName: medication.medicineName,
+      strength: medication.strength,
+      nextRefillDueDate: medication.nextRefillDueDate
+    });
 
+  const defaultMessage = buildMessage('REFILL_REMINDER');
+
+  const [template, setTemplate] = useState<WhatsAppTemplateType>('REFILL_REMINDER');
   const [messageText, setMessageText] = useState(defaultMessage);
   const [copied, setCopied] = useState(false);
+
+  const handleTemplateChange = (next: WhatsAppTemplateType) => {
+    setTemplate(next);
+    setMessageText(buildMessage(next));
+  };
 
   const formattedPhone = formatWhatsAppPhoneNumber(patient.phone);
   const waLink = buildWhatsAppLink(patient.phone, messageText);
@@ -140,6 +151,20 @@ export const WhatsAppReminderModal: React.FC<WhatsAppReminderModalProps> = ({
           <span>
             The message will open in WhatsApp with the prefilled text below. You can edit the text before sending.
           </span>
+        </div>
+
+        {/* Template Selector */}
+        <div className="wa-template-selector">
+          {(['REFILL_REMINDER', 'ORDER_READY', 'FOLLOW_UP'] as WhatsAppTemplateType[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`wa-template-pill ${template === t ? 'active' : ''}`}
+              onClick={() => handleTemplateChange(t)}
+            >
+              {getWhatsAppTemplateLabel(t)}
+            </button>
+          ))}
         </div>
 
         {/* Message Editor */}

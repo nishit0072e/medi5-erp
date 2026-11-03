@@ -12,6 +12,7 @@ import { PosScreen } from './components/PosScreen';
 import { SaleReceiptModal } from './components/SaleReceiptModal';
 import { PharmacySettingsView } from './components/PharmacySettingsView';
 import { PatientsView } from './components/PatientsView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { LoginScreen } from './components/LoginScreen';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
 import { getStoredSession, clearStoredSession, AUTH_SESSION_KEY } from './utils/authService';
@@ -35,10 +36,17 @@ import {
   addPatientMedication,
   deletePatientMedication,
   recordWhatsAppReminderSent,
-  markRefillDispensed
+  markRefillDispensed,
+  snoozeRefill,
+  cancelRefill,
+  completeRefill,
+  reactivateRefill,
+  createPrescription,
+  deletePrescription,
+  linkSaleToPatient
 } from './data/demoRepository';
 import { UpdatePharmacyInput, AddMemberInput, AuthSession } from './types/pharmacy';
-import { CreatePatientInput, AddMedicationInput, Patient } from './types/patient';
+import { CreatePatientInput, AddMedicationInput, UpdatePatientInput, PrescriptionReference } from './types/patient';
 import { calculateAllSummaries, calculateInventoryKpis } from './utils/inventoryCalculations';
 import { 
   StockFilter, 
@@ -51,6 +59,8 @@ import {
   Medicine 
 } from './types/inventory';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { computePharmacyAnalytics, getDefaultPeriod } from './utils/analytics';
+import { AnalyticsPeriod } from './types/analytics';
 
 export const App: React.FC = () => {
   // 0. Authentication & Multi-Tenant Session State
@@ -94,18 +104,40 @@ export const App: React.FC = () => {
     sales,
     patients = [],
     refills = [],
-    reminderLogs = []
+    reminderLogs = [],
+    prescriptions = []
   } = tenantInventory;
 
   // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'patients' | 'settings')
-  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'settings'>('inventory');
+const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings'>('inventory');
   const activeTab: 'inventory' | 'patients' | 'analytics' | 'settings' = 
-    activeView === 'settings' ? 'settings' : activeView === 'patients' ? 'patients' : 'inventory';
+    activeView === 'settings'
+      ? 'settings'
+      : activeView === 'patients'
+        ? 'patients'
+        : activeView === 'analytics'
+          ? 'analytics'
+          : 'inventory';
 
   // Urgent Refills Count
   const refillsDueCount = useMemo(() => {
     return refills.filter((r) => r.status === 'DUE_TODAY' || r.status === 'OVERDUE').length;
   }, [refills]);
+
+  // Analytics computation for leakage score and analytics view
+  const [analyticsPeriod] = useState<AnalyticsPeriod>(() => getDefaultPeriod());
+  const analytics = useMemo(() => {
+    if (!medicines.length && !sales.length) return null;
+    return computePharmacyAnalytics({
+      pharmacy: { id: activePharmacy?.id || '', name: activePharmacy?.name || '' } as any,
+      medicines,
+      batches,
+      sales,
+      movements,
+      period: analyticsPeriod,
+      referenceDate: new Date()
+    });
+  }, [medicines, batches, sales, movements, analyticsPeriod]);
 
   // 3. Search & Filters for Inventory View
   const [searchQuery, setSearchQuery] = useState('');
@@ -461,7 +493,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUpdatePatient = (patientId: string, input: Partial<Patient>) => {
+  const handleUpdatePatient = (patientId: string, input: UpdatePatientInput) => {
     try {
       const result = updatePatient(demoState, activePharmacy?.id, patientId, input);
       if (!persistTenantChange(result.nextState, 'Patient update failed: unable to persist changes.')) return;
@@ -525,6 +557,79 @@ export const App: React.FC = () => {
       showToast('success', `Refill marked dispensed for ${result.medication.medicineName}. Next cycle scheduled!`);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to mark refill dispensed');
+    }
+  };
+
+  const handleSnoozeRefill = (medicationId: string) => {
+    try {
+      const result = snoozeRefill(demoState, activePharmacy?.id, medicationId, 7);
+      if (!persistTenantChange(result.nextState, 'Refill snooze failed: unable to persist changes.')) return;
+      showToast('success', `Refill reminder snoozed to ${result.medication.nextRefillDueDate}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to snooze refill');
+    }
+  };
+
+  const handleCancelRefill = (medicationId: string) => {
+    try {
+      const result = cancelRefill(demoState, activePharmacy?.id, medicationId);
+      if (!persistTenantChange(result.nextState, 'Refill cancellation failed: unable to persist changes.')) return;
+      showToast('success', `Refill schedule for ${result.medication.medicineName} cancelled.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to cancel refill');
+    }
+  };
+
+  const handleCompleteRefill = (medicationId: string) => {
+    try {
+      const result = completeRefill(demoState, activePharmacy?.id, medicationId);
+      if (!persistTenantChange(result.nextState, 'Refill update failed: unable to persist changes.')) return;
+      showToast('success', `${result.medication.medicineName} therapy marked completed.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to complete refill');
+    }
+  };
+
+  const handleReactivateRefill = (medicationId: string) => {
+    try {
+      const result = reactivateRefill(demoState, activePharmacy?.id, medicationId);
+      if (!persistTenantChange(result.nextState, 'Refill update failed: unable to persist changes.')) return;
+      showToast('success', `${result.medication.medicineName} refill schedule reactivated.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to reactivate refill');
+    }
+  };
+
+  const handleCreatePrescription = (
+    patientId: string,
+    input: Omit<PrescriptionReference, 'id' | 'pharmacyId' | 'patientId' | 'createdAt' | 'updatedAt'>
+  ) => {
+    try {
+      const result = createPrescription(demoState, activePharmacy?.id, { ...input, patientId });
+      if (!persistTenantChange(result.nextState, 'Prescription save failed: unable to persist changes.')) return;
+      showToast('success', `Prescription ${result.prescription.referenceNumber} saved.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to save prescription');
+    }
+  };
+
+  const handleDeletePrescription = (prescriptionId: string) => {
+    try {
+      const nextState = deletePrescription(demoState, activePharmacy?.id, prescriptionId);
+      if (!persistTenantChange(nextState, 'Prescription deletion failed: unable to persist changes.')) return;
+      showToast('success', 'Prescription reference deleted.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to delete prescription');
+    }
+  };
+
+  const handleLinkPurchase = (patientId: string, saleId: string) => {
+    try {
+      const nextState = linkSaleToPatient(demoState, activePharmacy?.id, saleId, patientId);
+      if (!persistTenantChange(nextState, 'Purchase linkage failed: unable to persist changes.')) return;
+      showToast('success', 'Sale linked to patient purchase history.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to link sale');
     }
   };
 
@@ -628,7 +733,7 @@ export const App: React.FC = () => {
           />
 
           {/* Medicine & Batch Cards */}
-          <main className="inventory-list-section" role="region" aria-label="Medicine Inventory List">
+          <main className="inventory-list-section inventory-grid" role="region" aria-label="Medicine Inventory List">
             {filteredSummaries.length > 0 ? (
               filteredSummaries.map((summary) => (
                 <MedicineCard
@@ -664,6 +769,18 @@ export const App: React.FC = () => {
             }}
           />
         </main>
+      ) : activeView === 'analytics' ? (
+        /* Phase 4: Financial Health & Leakage Analytics Screen */
+        <main className="inventory-list-section" role="region" aria-label="Financial Health & Leakage Analytics">
+          <AnalyticsView
+            pharmacyId={activePharmacy.id}
+            pharmacyName={activePharmacy.name}
+            medicines={medicines}
+            batches={batches}
+            sales={sales}
+            onBackToInventory={() => setActiveView('inventory')}
+          />
+        </main>
       ) : activeView === 'patients' ? (
         /* Phase 3: Patients & WhatsApp Refill Reminders Screen */
         <main className="inventory-list-section" role="region" aria-label="Patients and Refills">
@@ -671,6 +788,8 @@ export const App: React.FC = () => {
             patients={patients}
             refills={refills}
             reminderLogs={reminderLogs}
+            prescriptions={prescriptions}
+            sales={sales}
             medicines={medicines}
             pharmacy={activePharmacy}
             staffUser={session.user.name}
@@ -681,6 +800,13 @@ export const App: React.FC = () => {
             onDeleteMedication={handleDeleteMedication}
             onRecordWhatsAppSent={handleRecordWhatsAppSent}
             onMarkDispensed={handleMarkRefillDispensed}
+            onSnoozeRefill={handleSnoozeRefill}
+            onCancelRefill={handleCancelRefill}
+            onCompleteRefill={handleCompleteRefill}
+            onReactivateRefill={handleReactivateRefill}
+            onCreatePrescription={handleCreatePrescription}
+            onDeletePrescription={handleDeletePrescription}
+            onLinkPurchase={handleLinkPurchase}
             onBackToInventory={() => setActiveView('inventory')}
           />
         </main>
@@ -717,12 +843,15 @@ export const App: React.FC = () => {
             setActiveView('inventory');
           } else if (tab === 'patients') {
             setActiveView('patients');
+          } else if (tab === 'analytics') {
+            setActiveView('analytics');
           } else if (tab === 'settings') {
             setActiveView('settings');
           }
         }} 
         inventoryCount={filteredSummaries.length}
         refillAlertCount={refillsDueCount}
+        leakageScore={analytics?.leakage.leakageScore || 0}
       />
 
       {/* Receive Stock Modal */}

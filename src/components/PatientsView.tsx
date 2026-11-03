@@ -14,31 +14,42 @@ import {
   History, 
   ArrowRight,
   Check,
-  RefreshCw
+  RefreshCw,
+  Pencil,
+  FileText,
+  UserCheck
 } from 'lucide-react';
 import { 
   Patient, 
   PatientMedication, 
   WhatsAppReminderLog, 
   CreatePatientInput, 
-  AddMedicationInput
+  AddMedicationInput,
+  PrescriptionReference,
+  UpdatePatientInput
 } from '../types/patient';
 import { PharmacyProfile } from '../types/pharmacy';
-import { Medicine } from '../types/inventory';
+import { Medicine, SaleRecord } from '../types/inventory';
 import { getRefillUrgency } from '../utils/whatsappUtils';
 import { AddPatientModal } from './AddPatientModal';
 import { AddMedicationModal } from './AddMedicationModal';
 import { WhatsAppReminderModal } from './WhatsAppReminderModal';
+import { EditPatientModal } from './EditPatientModal';
+import { CustomerProfileView } from './CustomerProfileView';
+import { CustomerInsights } from './CustomerInsights';
+import { AddPrescriptionModal, PrescriptionFormInput } from './AddPrescriptionModal';
 
 interface PatientsViewProps {
   patients: Patient[];
   refills: PatientMedication[];
   reminderLogs: WhatsAppReminderLog[];
+  prescriptions: PrescriptionReference[];
+  sales: SaleRecord[];
   medicines: Medicine[];
   pharmacy: PharmacyProfile;
   staffUser: string;
   onCreatePatient: (input: CreatePatientInput) => void;
-  onUpdatePatient?: (patientId: string, input: Partial<Patient>) => void;
+  onUpdatePatient: (patientId: string, input: UpdatePatientInput) => void;
   onDeletePatient: (patientId: string) => void;
   onAddMedication: (patientId: string, input: AddMedicationInput) => void;
   onDeleteMedication: (medicationId: string) => void;
@@ -51,23 +62,46 @@ interface PatientsViewProps {
     initiatedByStaff: string;
   }) => void;
   onMarkDispensed: (medicationId: string) => void;
+  onSnoozeRefill: (medicationId: string) => void;
+  onCancelRefill: (medicationId: string) => void;
+  onCompleteRefill: (medicationId: string) => void;
+  onReactivateRefill: (medicationId: string) => void;
+  onCreatePrescription: (patientId: string, input: PrescriptionFormInput) => void;
+  onDeletePrescription: (prescriptionId: string) => void;
+  onLinkPurchase: (patientId: string, saleId: string) => void;
   onBackToInventory?: () => void;
 }
+
+type DirectoryStatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE';
+type DirectorySort = 'NAME' | 'NEWEST' | 'DUE_SOON';
+type RefillFilter = 'ALL' | 'DUE_TODAY' | 'OVERDUE' | 'UPCOMING_7' | 'COMPLETED' | 'CANCELLED';
+
+const isTerminalRefill = (status: PatientMedication['status']) =>
+  status === 'COMPLETED' || status === 'CANCELLED';
 
 export const PatientsView: React.FC<PatientsViewProps> = ({
   patients,
   refills,
   reminderLogs,
+  prescriptions,
+  sales,
   medicines,
   pharmacy,
   staffUser,
   onCreatePatient,
-  onUpdatePatient: _onUpdatePatient,
+  onUpdatePatient,
   onDeletePatient,
   onAddMedication,
   onDeleteMedication,
   onRecordWhatsAppSent,
   onMarkDispensed,
+  onSnoozeRefill,
+  onCancelRefill,
+  onCompleteRefill,
+  onReactivateRefill,
+  onCreatePrescription,
+  onDeletePrescription,
+  onLinkPurchase,
   onBackToInventory
 }) => {
   // Navigation Tabs: 'refills' | 'directory' | 'logs'
@@ -75,11 +109,16 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [urgencyFilter, setUrgencyFilter] = useState<'ALL' | 'DUE_TODAY' | 'OVERDUE' | 'UPCOMING_7'>('ALL');
+  const [urgencyFilter, setUrgencyFilter] = useState<RefillFilter>('ALL');
+  const [directoryStatusFilter, setDirectoryStatusFilter] = useState<DirectoryStatusFilter>('ALL');
+  const [directorySort, setDirectorySort] = useState<DirectorySort>('NAME');
 
   // Modals state
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [addMedTargetPatient, setAddMedTargetPatient] = useState<Patient | null>(null);
+  const [editTargetPatient, setEditTargetPatient] = useState<Patient | null>(null);
+  const [addRxTargetPatient, setAddRxTargetPatient] = useState<Patient | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [waReminderTarget, setWaReminderTarget] = useState<{
     patient: Patient;
     medication: PatientMedication;
@@ -113,29 +152,57 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
   // Aggregate KPI summary
   const stats = useMemo(() => {
-    const dueToday = enrichedRefills.filter((r) => r.urgency.status === 'DUE_TODAY').length;
-    const overdue = enrichedRefills.filter((r) => r.urgency.status === 'OVERDUE').length;
-    const upcoming7 = enrichedRefills.filter(
+    const activeRefillQueue = enrichedRefills.filter((r) => !isTerminalRefill(r.refill.status));
+    const dueToday = activeRefillQueue.filter((r) => r.urgency.status === 'DUE_TODAY').length;
+    const overdue = activeRefillQueue.filter((r) => r.urgency.status === 'OVERDUE').length;
+    const upcoming7 = activeRefillQueue.filter(
       (r) => r.urgency.status === 'UPCOMING' && r.urgency.diffDays <= 7
     ).length;
+    const completedRefills = enrichedRefills.filter((r) => r.refill.status === 'COMPLETED').length;
+    const cancelledRefills = enrichedRefills.filter((r) => r.refill.status === 'CANCELLED').length;
+
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const activePatients = patients.filter((p) => p.status === 'ACTIVE').length;
+    const inactivePatients = patients.length - activePatients;
+    const newThisMonth = patients.filter((p) => p.createdAt >= monthStart).length;
+    const activeRefills = refills.filter(
+      (r) => r.status !== 'COMPLETED' && r.status !== 'CANCELLED'
+    ).length;
+    const recentActivity = reminderLogs.filter((l) => {
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      return new Date(l.sentAt).getTime() >= weekAgo;
+    }).length;
 
     return {
       totalPatients: patients.length,
+      activePatients,
+      inactivePatients,
+      newThisMonth,
       dueToday,
       overdue,
       upcoming7,
+      completedRefills,
+      cancelledRefills,
       totalRefills: refills.length,
-      totalRemindersSent: reminderLogs.length
+      activeRefills,
+      totalRemindersSent: reminderLogs.length,
+      recentActivity
     };
-  }, [patients.length, enrichedRefills, refills.length, reminderLogs.length]);
+  }, [patients, enrichedRefills, refills, reminderLogs]);
 
   // Filtered refills queue
   const filteredRefills = useMemo(() => {
     return enrichedRefills.filter(({ refill, patient, urgency }) => {
-      // 1. Urgency filter
-      if (urgencyFilter === 'DUE_TODAY' && urgency.status !== 'DUE_TODAY') return false;
-      if (urgencyFilter === 'OVERDUE' && urgency.status !== 'OVERDUE') return false;
-      if (urgencyFilter === 'UPCOMING_7' && (urgency.diffDays < 0 || urgency.diffDays > 7)) return false;
+      // 1. Urgency / lifecycle filter
+      if (urgencyFilter === 'COMPLETED' || urgencyFilter === 'CANCELLED') {
+        if (refill.status !== urgencyFilter) return false;
+      } else {
+        if (isTerminalRefill(refill.status)) return false;
+        if (urgencyFilter === 'DUE_TODAY' && urgency.status !== 'DUE_TODAY') return false;
+        if (urgencyFilter === 'OVERDUE' && urgency.status !== 'OVERDUE') return false;
+        if (urgencyFilter === 'UPCOMING_7' && (urgency.diffDays < 0 || urgency.diffDays > 7)) return false;
+      }
 
       // 2. Search query filter
       if (searchQuery.trim()) {
@@ -151,10 +218,176 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
   // Filtered patients directory
   const filteredPatients = useMemo(() => {
-    if (!searchQuery.trim()) return patients;
-    const q = searchQuery.toLowerCase().trim();
-    return patients.filter((p) => p.name.toLowerCase().includes(q) || p.phone.includes(q) || p.address?.toLowerCase().includes(q));
-  }, [patients, searchQuery]);
+    const normalizedQuery = searchQuery.toLowerCase().trim();
+
+    const matches = patients.filter((p) => {
+      if (directoryStatusFilter !== 'ALL' && p.status !== directoryStatusFilter) return false;
+      if (!normalizedQuery) return true;
+      return (
+        p.name.toLowerCase().includes(normalizedQuery) ||
+        p.phone.includes(normalizedQuery) ||
+        p.email?.toLowerCase().includes(normalizedQuery) ||
+        p.address?.toLowerCase().includes(normalizedQuery)
+      );
+    });
+
+    const refillsByPatient = new Map<string, PatientMedication[]>();
+    refills.forEach((refill) => {
+      const list = refillsByPatient.get(refill.patientId) || [];
+      list.push(refill);
+      refillsByPatient.set(refill.patientId, list);
+    });
+
+    const earliestDue = (patientId: string) => {
+      const list = (refillsByPatient.get(patientId) || []).filter(
+        (r) => r.status !== 'COMPLETED' && r.status !== 'CANCELLED'
+      );
+      if (list.length === 0) return Number.POSITIVE_INFINITY;
+      return Math.min(
+        ...list.map((r) => new Date(`${r.nextRefillDueDate}T00:00:00.000Z`).getTime())
+      );
+    };
+
+    return [...matches].sort((a, b) => {
+      switch (directorySort) {
+        case 'NEWEST':
+          return b.createdAt.localeCompare(a.createdAt);
+        case 'DUE_SOON':
+          return earliestDue(a.id) - earliestDue(b.id);
+        case 'NAME':
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
+  }, [patients, refills, searchQuery, directoryStatusFilter, directorySort]);
+
+  const selectedPatient = selectedPatientId
+    ? patients.find((p) => p.id === selectedPatientId) || null
+    : null;
+
+  if (selectedPatient) {
+    return (
+      <div className="patients-container">
+        {localFeedback && (
+          <div className="settings-alert alert-success" style={{ margin: '12px 0' }}>
+            <CheckCircle2 size={16} />
+            <span>{localFeedback}</span>
+          </div>
+        )}
+
+        <CustomerProfileView
+          patient={selectedPatient}
+          refills={refills}
+          prescriptions={prescriptions}
+          reminderLogs={reminderLogs}
+          sales={sales}
+          pharmacy={pharmacy}
+          onBack={() => setSelectedPatientId(null)}
+          onEdit={() => setEditTargetPatient(selectedPatient)}
+          onToggleStatus={() => {
+            const nextStatus = selectedPatient.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+            onUpdatePatient(selectedPatient.id, { status: nextStatus });
+            showFeedback(
+              `Marked ${selectedPatient.name} as ${nextStatus.toLowerCase()}.`
+            );
+          }}
+          onAddMedication={() => setAddMedTargetPatient(selectedPatient)}
+          onDeleteMedication={(medicationId) => {
+            onDeleteMedication(medicationId);
+            showFeedback('Medication schedule removed.');
+          }}
+          onMarkDispensed={(medicationId) => {
+            onMarkDispensed(medicationId);
+            showFeedback('Refill marked dispensed. Next cycle scheduled.');
+          }}
+          onSnoozeRefill={(medicationId) => {
+            onSnoozeRefill(medicationId);
+            showFeedback('Refill reminder snoozed for 7 days.');
+          }}
+          onCancelRefill={(medicationId) => {
+            if (window.confirm('Cancel this refill schedule? Reminders will stop until reactivated.')) {
+              onCancelRefill(medicationId);
+              showFeedback('Refill schedule cancelled.');
+            }
+          }}
+          onCompleteRefill={(medicationId) => {
+            onCompleteRefill(medicationId);
+            showFeedback('Refill schedule marked completed.');
+          }}
+          onReactivateRefill={(medicationId) => {
+            onReactivateRefill(medicationId);
+            showFeedback('Refill schedule reactivated.');
+          }}
+          onSendWhatsApp={(medication) => {
+            setWaReminderTarget({ patient: selectedPatient, medication });
+          }}
+          onAddPrescription={() => setAddRxTargetPatient(selectedPatient)}
+          onDeletePrescription={(prescriptionId) => {
+            onDeletePrescription(prescriptionId);
+            showFeedback('Prescription reference deleted.');
+          }}
+          onLinkPurchase={(saleId) => {
+            onLinkPurchase(selectedPatient.id, saleId);
+            showFeedback('Sale linked to customer purchase history.');
+          }}
+        />
+
+        {editTargetPatient && (
+          <EditPatientModal
+            isOpen={Boolean(editTargetPatient)}
+            patient={editTargetPatient}
+            onClose={() => setEditTargetPatient(null)}
+            onSubmit={(patientId, input) => {
+              onUpdatePatient(patientId, input);
+              showFeedback('Patient profile updated.');
+            }}
+          />
+        )}
+
+        {addRxTargetPatient && (
+          <AddPrescriptionModal
+            isOpen={Boolean(addRxTargetPatient)}
+            patient={addRxTargetPatient}
+            onClose={() => setAddRxTargetPatient(null)}
+            onSubmit={(input) => {
+              onCreatePrescription(addRxTargetPatient.id, input);
+              showFeedback(`Prescription ${input.referenceNumber} saved.`);
+            }}
+          />
+        )}
+
+        {addMedTargetPatient && (
+          <AddMedicationModal
+            isOpen={Boolean(addMedTargetPatient)}
+            patient={addMedTargetPatient}
+            medicines={medicines}
+            onClose={() => setAddMedTargetPatient(null)}
+            onSubmit={(input) => {
+              onAddMedication(addMedTargetPatient.id, input);
+              showFeedback(`Added ${input.medicineName} to ${addMedTargetPatient.name}'s schedule.`);
+              setAddMedTargetPatient(null);
+            }}
+          />
+        )}
+
+        {waReminderTarget && (
+          <WhatsAppReminderModal
+            isOpen={Boolean(waReminderTarget)}
+            patient={waReminderTarget.patient}
+            medication={waReminderTarget.medication}
+            pharmacy={pharmacy}
+            staffUser={staffUser}
+            onClose={() => setWaReminderTarget(null)}
+            onSent={(logData) => {
+              onRecordWhatsAppSent(logData);
+              showFeedback(`WhatsApp reminder recorded for ${waReminderTarget.patient.name}.`);
+              setWaReminderTarget(null);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="patients-container">
@@ -206,6 +439,30 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
       {/* KPI Cards Row */}
       <div className="patient-kpi-grid">
         <div 
+          className="patient-kpi-card"
+          onClick={() => { setActiveTab('directory'); setDirectoryStatusFilter('ALL'); }}
+        >
+          <div className="kpi-card-header">
+            <span className="kpi-label">TOTAL CUSTOMERS</span>
+            <Users size={16} className="text-primary-green" />
+          </div>
+          <div className="kpi-value">{stats.totalPatients}</div>
+          <span className="kpi-sub">Registered profiles</span>
+        </div>
+
+        <div 
+          className={`patient-kpi-card ${directoryStatusFilter === 'ACTIVE' && activeTab === 'directory' ? 'active-filter' : ''}`}
+          onClick={() => { setActiveTab('directory'); setDirectoryStatusFilter('ACTIVE'); }}
+        >
+          <div className="kpi-card-header">
+            <span className="kpi-label">ACTIVE CUSTOMERS</span>
+            <UserCheck size={16} className="text-emerald-500" />
+          </div>
+          <div className="kpi-value text-emerald-500">{stats.activePatients}</div>
+          <span className="kpi-sub">{stats.inactivePatients} inactive profile(s)</span>
+        </div>
+
+        <div 
           className={`patient-kpi-card ${urgencyFilter === 'DUE_TODAY' ? 'active-filter' : ''}`}
           onClick={() => { setActiveTab('refills'); setUrgencyFilter('DUE_TODAY'); }}
         >
@@ -226,7 +483,19 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             <AlertCircle size={16} className="text-red-500" />
           </div>
           <div className="kpi-value text-red-500">{stats.overdue}</div>
-          <span className="kpi-sub">Action required to retain patient</span>
+          <span className="kpi-sub">Needs immediate follow-up</span>
+        </div>
+
+        <div 
+          className={`patient-kpi-card ${directorySort === 'NEWEST' && activeTab === 'directory' ? 'active-filter' : ''}`}
+          onClick={() => { setActiveTab('directory'); setDirectorySort('NEWEST'); }}
+        >
+          <div className="kpi-card-header">
+            <span className="kpi-label">NEW THIS MONTH</span>
+            <Plus size={16} className="text-blue-500" />
+          </div>
+          <div className="kpi-value text-blue-500">{stats.newThisMonth}</div>
+          <span className="kpi-sub">Newly registered customers</span>
         </div>
 
         <div 
@@ -234,23 +503,11 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           onClick={() => { setActiveTab('refills'); setUrgencyFilter('UPCOMING_7'); }}
         >
           <div className="kpi-card-header">
-            <span className="kpi-label">UPCOMING (NEXT 7 DAYS)</span>
+            <span className="kpi-label">UPCOMING 7 DAYS</span>
             <Calendar size={16} className="text-emerald-500" />
           </div>
           <div className="kpi-value text-emerald-500">{stats.upcoming7}</div>
-          <span className="kpi-sub">Upcoming refill pipeline</span>
-        </div>
-
-        <div 
-          className="patient-kpi-card"
-          onClick={() => { setActiveTab('directory'); setUrgencyFilter('ALL'); }}
-        >
-          <div className="kpi-card-header">
-            <span className="kpi-label">TOTAL REGISTERED PATIENTS</span>
-            <Users size={16} className="text-primary-green" />
-          </div>
-          <div className="kpi-value">{stats.totalPatients}</div>
-          <span className="kpi-sub">Active chronic customer base</span>
+          <span className="kpi-sub">Refills due next week</span>
         </div>
       </div>
 
@@ -264,7 +521,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           onClick={() => setActiveTab('refills')}
         >
           <Clock size={15} />
-          <span>Refill Reminders Queue</span>
+          <span>Refill Queue</span>
           {stats.dueToday + stats.overdue > 0 && (
             <span className="badge-alert-count">{stats.dueToday + stats.overdue}</span>
           )}
@@ -278,7 +535,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           onClick={() => setActiveTab('directory')}
         >
           <Users size={15} />
-          <span>Patient Directory ({patients.length})</span>
+          <span>Directory ({patients.length})</span>
         </button>
 
         <button
@@ -289,7 +546,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           onClick={() => setActiveTab('logs')}
         >
           <History size={15} />
-          <span>WhatsApp Audit Log ({reminderLogs.length})</span>
+          <span>Audit Log ({reminderLogs.length})</span>
         </button>
       </div>
 
@@ -329,6 +586,20 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
               >
                 Next 7 Days ({stats.upcoming7})
               </button>
+              <button
+                type="button"
+                className={`queue-pill ${urgencyFilter === 'COMPLETED' ? 'active' : ''}`}
+                onClick={() => setUrgencyFilter('COMPLETED')}
+              >
+                Completed ({stats.completedRefills})
+              </button>
+              <button
+                type="button"
+                className={`queue-pill ${urgencyFilter === 'CANCELLED' ? 'active' : ''}`}
+                onClick={() => setUrgencyFilter('CANCELLED')}
+              >
+                Cancelled ({stats.cancelledRefills})
+              </button>
             </div>
 
             <div className="queue-search-box">
@@ -348,8 +619,9 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             <div className="refill-cards-grid">
               {filteredRefills.map(({ refill, patient, urgency }) => {
                 if (!patient) return null;
-                const isOverdue = urgency.status === 'OVERDUE';
-                const isDueToday = urgency.status === 'DUE_TODAY';
+                const terminal = isTerminalRefill(refill.status);
+                const isOverdue = !terminal && urgency.status === 'OVERDUE';
+                const isDueToday = !terminal && urgency.status === 'DUE_TODAY';
 
                 return (
                   <div 
@@ -366,11 +638,18 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                         </div>
                       </div>
 
-                      <div className={`refill-urgency-pill urgency-${urgency.status.toLowerCase()}`}>
-                        {urgency.status === 'OVERDUE' && <AlertCircle size={12} />}
-                        {urgency.status === 'DUE_TODAY' && <Clock size={12} />}
-                        <span>{urgency.label}</span>
-                      </div>
+                      {terminal ? (
+                        <div className={`refill-urgency-pill urgency-${refill.status.toLowerCase()}`}>
+                          {refill.status === 'COMPLETED' ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+                          <span>{refill.status === 'COMPLETED' ? 'Completed' : 'Cancelled'}</span>
+                        </div>
+                      ) : (
+                        <div className={`refill-urgency-pill urgency-${urgency.status.toLowerCase()}`}>
+                          {urgency.status === 'OVERDUE' && <AlertCircle size={12} />}
+                          {urgency.status === 'DUE_TODAY' && <Clock size={12} />}
+                          <span>{urgency.label}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="refill-med-details">
@@ -399,28 +678,45 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
                     {/* Actions */}
                     <div className="refill-card-actions">
-                      <button
-                        type="button"
-                        className="btn-action-wa"
-                        onClick={() => setWaReminderTarget({ patient, medication: refill })}
-                        title="Send personalized WhatsApp refill reminder"
-                      >
-                        <MessageSquare size={14} />
-                        <span>WhatsApp Reminder</span>
-                      </button>
+                      {terminal ? (
+                        <button
+                          type="button"
+                          className="btn-action-dispensed"
+                          onClick={() => {
+                            onReactivateRefill(refill.id);
+                            showFeedback(`Refill schedule for ${refill.medicineName} reactivated.`);
+                          }}
+                          title="Reactivate this refill schedule and resume reminders"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Reactivate Schedule</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-action-wa"
+                            onClick={() => setWaReminderTarget({ patient, medication: refill })}
+                            title="Send personalized WhatsApp refill reminder"
+                          >
+                            <MessageSquare size={14} />
+                            <span>WhatsApp Reminder</span>
+                          </button>
 
-                      <button
-                        type="button"
-                        className="btn-action-dispensed"
-                        onClick={() => {
-                          onMarkDispensed(refill.id);
-                          showFeedback(`Marked ${refill.medicineName} dispensed for ${patient.name}. Refill date advanced!`);
-                        }}
-                        title="Mark this refill as dispensed today, advancing the next refill cycle"
-                      >
-                        <RefreshCw size={13} />
-                        <span>Mark Dispensed</span>
-                      </button>
+                          <button
+                            type="button"
+                            className="btn-action-dispensed"
+                            onClick={() => {
+                              onMarkDispensed(refill.id);
+                              showFeedback(`Marked ${refill.medicineName} dispensed for ${patient.name}. Refill date advanced!`);
+                            }}
+                            title="Mark this refill as dispensed today, advancing the next refill cycle"
+                          >
+                            <RefreshCw size={13} />
+                            <span>Mark Dispensed</span>
+                          </button>
+                        </>
+                      )}
 
                       <a
                         href={`tel:${patient.phone}`}
@@ -453,143 +749,256 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           ===================================================================== */}
       {activeTab === 'directory' && (
         <div className="patient-tab-content">
-          <div className="queue-controls-bar">
-            <div className="queue-search-box" style={{ width: '100%', maxWidth: '360px' }}>
+          <CustomerInsights patients={patients} sales={sales} reminderLogs={reminderLogs} />
+
+          <div className="directory-controls">
+            <div className="queue-search-box directory-search">
               <Search size={14} className="search-icon" />
               <input
                 type="text"
-                placeholder="Search patient directory by name or phone..."
+                placeholder="Search by name, phone, email or address..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="queue-search-input"
               />
             </div>
 
-            <button
-              type="button"
-              className="btn-primary-action btn-sm"
-              onClick={() => setIsAddPatientOpen(true)}
-            >
-              <Plus size={14} />
-              <span>+ Add Patient</span>
-            </button>
+            <div className="directory-filters">
+              <div className="queue-filter-pills">
+                <button
+                  type="button"
+                  className={`queue-pill ${directoryStatusFilter === 'ALL' ? 'active' : ''}`}
+                  onClick={() => setDirectoryStatusFilter('ALL')}
+                >
+                  All ({patients.length})
+                </button>
+                <button
+                  type="button"
+                  className={`queue-pill pill-green ${directoryStatusFilter === 'ACTIVE' ? 'active' : ''}`}
+                  onClick={() => setDirectoryStatusFilter('ACTIVE')}
+                >
+                  Active ({stats.activePatients})
+                </button>
+                <button
+                  type="button"
+                  className={`queue-pill ${directoryStatusFilter === 'INACTIVE' ? 'active' : ''}`}
+                  onClick={() => setDirectoryStatusFilter('INACTIVE')}
+                >
+                  Inactive ({stats.inactivePatients})
+                </button>
+              </div>
+
+              <label className="directory-sort-label text-xs text-muted">
+                Sort
+                <select
+                  className="form-select directory-sort-select"
+                  value={directorySort}
+                  onChange={(e) => setDirectorySort(e.target.value as DirectorySort)}
+                >
+                  <option value="NAME">Name (A–Z)</option>
+                  <option value="NEWEST">Newest first</option>
+                  <option value="DUE_SOON">Refill due soon</option>
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className="btn-primary-action btn-sm"
+                onClick={() => setIsAddPatientOpen(true)}
+              >
+                <Plus size={14} />
+                <span>Add Patient</span>
+              </button>
+            </div>
           </div>
 
-          <div className="patient-directory-list">
-            {filteredPatients.map((patient) => {
-              const patientRefills = refills.filter((r) => r.patientId === patient.id);
+          {filteredPatients.length > 0 ? (
+            <div className="patient-directory-list">
+              {filteredPatients.map((patient) => {
+                const patientRefills = refills.filter((r) => r.patientId === patient.id);
+                const patientRxCount = prescriptions.filter((p) => p.patientId === patient.id).length;
+                const patientPurchaseCount = sales.filter((s) => s.patientId === patient.id).length;
 
-              return (
-                <div key={patient.id} className="patient-profile-card">
-                  <div className="patient-profile-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div className="patient-avatar">{patient.name.charAt(0)}</div>
-                      <div>
-                        <div className="patient-card-name font-bold">{patient.name}</div>
-                        <div className="patient-card-sub text-xs text-muted font-mono">
-                          Ph: +91 {patient.phone}
-                          {patient.age && <span> • Age: {patient.age}y</span>}
-                          {patient.gender && <span> • {patient.gender}</span>}
+                return (
+                  <div
+                    key={patient.id}
+                    className={`patient-profile-card ${patient.status === 'INACTIVE' ? 'patient-card-inactive' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedPatientId(patient.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedPatientId(patient.id);
+                      }
+                    }}
+                  >
+                    <div className="patient-profile-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div className={`patient-avatar ${patient.status === 'INACTIVE' ? 'patient-avatar-muted' : ''}`}>
+                          {patient.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="patient-card-name font-bold">
+                            {patient.name}
+                            <span className={`patient-status-pill status-${patient.status.toLowerCase()}`}>
+                              {patient.status}
+                            </span>
+                          </div>
+                          <div className="patient-card-sub text-xs text-muted font-mono">
+                            Ph: +91 {patient.phone}
+                            {patient.age && <span> • Age: {patient.age}y</span>}
+                            {patient.gender && <span> • {patient.gender}</span>}
+                            <span> • {patient.communicationPreference}</span>
+                          </div>
+                          <div className="patient-card-meta text-xs text-muted">
+                            <span><Pill size={11} /> {patientRefills.length} refill schedule(s)</span>
+                            <span><FileText size={11} /> {patientRxCount} prescription(s)</span>
+                            <span><History size={11} /> {patientPurchaseCount} purchase(s)</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="patient-header-actions">
-                      <button
-                        type="button"
-                        className="btn-add-med-pill"
-                        onClick={() => setAddMedTargetPatient(patient)}
-                      >
-                        <Plus size={13} />
-                        <span>Add Medication</span>
-                      </button>
+                      <div className="patient-header-actions">
+                        <button
+                          type="button"
+                          className="btn-view-profile"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPatientId(patient.id);
+                          }}
+                        >
+                          <ArrowRight size={13} />
+                          <span>View Profile</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        className="btn-delete-member"
-                        onClick={() => {
-                          if (window.confirm(`Delete patient record for "${patient.name}" and all their scheduled reminders?`)) {
-                            onDeletePatient(patient.id);
-                            showFeedback(`Deleted patient ${patient.name}.`);
-                          }
-                        }}
-                        title="Delete patient"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
+                        <button
+                          type="button"
+                          className="btn-add-med-pill"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditTargetPatient(patient);
+                          }}
+                          title="Edit patient profile"
+                        >
+                          <Pencil size={13} />
+                        </button>
 
-                  {patient.address && (
-                    <div className="patient-meta-line text-xs text-muted">
-                      📍 {patient.address}
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          className="btn-add-med-pill"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAddMedTargetPatient(patient);
+                          }}
+                        >
+                          <Plus size={13} />
+                          <span>Add Medication</span>
+                        </button>
 
-                  {patient.notes && (
-                    <div className="patient-meta-line text-xs text-muted">
-                      📝 {patient.notes}
-                    </div>
-                  )}
-
-                  {/* Medications for this patient */}
-                  <div className="patient-meds-section">
-                    <div className="patient-meds-header text-xs font-bold text-muted uppercase">
-                      Active Chronic Prescriptions ({patientRefills.length})
-                    </div>
-
-                    {patientRefills.length > 0 ? (
-                      <div className="patient-meds-grid">
-                        {patientRefills.map((med) => {
-                          const urgency = getRefillUrgency(med.nextRefillDueDate);
-
-                          return (
-                            <div key={med.id} className="patient-med-chip">
-                              <div className="med-chip-info">
-                                <span className="font-bold text-xs">{med.medicineName} ({med.strength})</span>
-                                <span className="text-muted text-xs font-mono">{med.dailyDosage}</span>
-                                <div className="text-muted text-xs font-mono">
-                                  Due: <strong className="text-primary-green-dark">{med.nextRefillDueDate}</strong> ({urgency.label})
-                                </div>
-                              </div>
-
-                              <div className="med-chip-actions">
-                                <button
-                                  type="button"
-                                  className="btn-chip-wa"
-                                  onClick={() => setWaReminderTarget({ patient, medication: med })}
-                                  title="Send WhatsApp Reminder"
-                                >
-                                  <MessageSquare size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn-chip-delete"
-                                  onClick={() => {
-                                    if (window.confirm(`Remove ${med.medicineName} from ${patient.name}'s chronic list?`)) {
-                                      onDeleteMedication(med.id);
-                                      showFeedback(`Removed ${med.medicineName}.`);
-                                    }
-                                  }}
-                                  title="Remove medication"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                        <button
+                          type="button"
+                          className="btn-delete-member"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete patient record for "${patient.name}" and all their scheduled reminders?`)) {
+                              onDeletePatient(patient.id);
+                              showFeedback(`Deleted patient ${patient.name}.`);
+                            }
+                          }}
+                          title="Delete patient"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
-                    ) : (
-                      <div className="text-xs text-muted py-1 font-mono">
-                        No chronic medications assigned yet. Click "+ Add Medication" above to schedule refills.
+                    </div>
+
+                    {patient.address && (
+                      <div className="patient-meta-line text-xs text-muted">
+                        📍 {patient.address}
                       </div>
                     )}
+
+                    {patient.notes && (
+                      <div className="patient-meta-line text-xs text-muted">
+                        📝 {patient.notes}
+                      </div>
+                    )}
+
+                    <div className="patient-meds-section">
+                      <div className="patient-meds-header text-xs font-bold text-muted uppercase">
+                        Active Chronic Prescriptions ({patientRefills.length})
+                      </div>
+
+                      {patientRefills.length > 0 ? (
+                        <div className="patient-meds-grid">
+                          {patientRefills.map((med) => {
+                            const urgency = getRefillUrgency(med.nextRefillDueDate);
+                            const terminal = med.status === 'COMPLETED' || med.status === 'CANCELLED';
+
+                            return (
+                              <div key={med.id} className={`patient-med-chip ${terminal ? 'med-chip-terminal' : ''}`}>
+                                <div className="med-chip-info">
+                                  <span className="font-bold text-xs">{med.medicineName} ({med.strength})</span>
+                                  <span className="text-muted text-xs font-mono">{med.dailyDosage}</span>
+                                  <div className="text-muted text-xs font-mono">
+                                    Due: <strong className="text-primary-green-dark">{med.nextRefillDueDate}</strong>{' '}
+                                    ({terminal ? med.status : urgency.label})
+                                  </div>
+                                </div>
+
+                                <div className="med-chip-actions">
+                                  {!terminal && (
+                                    <button
+                                      type="button"
+                                      className="btn-chip-wa"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setWaReminderTarget({ patient, medication: med });
+                                      }}
+                                      title="Send WhatsApp Reminder"
+                                    >
+                                      <MessageSquare size={13} />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="btn-chip-delete"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (window.confirm(`Remove ${med.medicineName} from ${patient.name}'s chronic list?`)) {
+                                        onDeleteMedication(med.id);
+                                        showFeedback(`Removed ${med.medicineName}.`);
+                                      }
+                                    }}
+                                    title="Remove medication"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted py-1 font-mono">
+                          No chronic medications assigned yet. Click "+ Add Medication" above to schedule refills.
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-patient-state">
+              <Users size={36} className="text-muted" />
+              <h4>No Patients Match Filters</h4>
+              <p className="text-muted text-xs">
+                Try a different search term or status filter.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -661,6 +1070,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         <AddPatientModal
           isOpen={isAddPatientOpen}
           medicines={medicines}
+          patients={patients}
           onClose={() => setIsAddPatientOpen(false)}
           onSubmit={(input) => {
             onCreatePatient(input);
@@ -680,6 +1090,32 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             onAddMedication(addMedTargetPatient.id, input);
             showFeedback(`Added ${input.medicineName} to ${addMedTargetPatient.name}'s schedule.`);
             setAddMedTargetPatient(null);
+          }}
+        />
+      )}
+
+      {/* MODAL: EDIT PATIENT */}
+      {editTargetPatient && (
+        <EditPatientModal
+          isOpen={Boolean(editTargetPatient)}
+          patient={editTargetPatient}
+          onClose={() => setEditTargetPatient(null)}
+          onSubmit={(patientId, input) => {
+            onUpdatePatient(patientId, input);
+            showFeedback('Patient profile updated.');
+          }}
+        />
+      )}
+
+      {/* MODAL: ADD PRESCRIPTION REFERENCE */}
+      {addRxTargetPatient && (
+        <AddPrescriptionModal
+          isOpen={Boolean(addRxTargetPatient)}
+          patient={addRxTargetPatient}
+          onClose={() => setAddRxTargetPatient(null)}
+          onSubmit={(input) => {
+            onCreatePrescription(addRxTargetPatient.id, input);
+            showFeedback(`Prescription ${input.referenceNumber} saved.`);
           }}
         />
       )}

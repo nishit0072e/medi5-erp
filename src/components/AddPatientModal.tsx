@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { UserPlus, X, AlertCircle, Clock } from 'lucide-react';
 import { Medicine } from '../types/inventory';
-import { CreatePatientInput } from '../types/patient';
+import { CommunicationPreference, CreatePatientInput, Patient } from '../types/patient';
 import { isValidIndianMobile, calculateRefillDueDate } from '../utils/whatsappUtils';
 
 interface AddPatientModalProps {
   isOpen: boolean;
   medicines: Medicine[];
+  patients: Patient[];
   onClose: () => void;
   onSubmit: (input: CreatePatientInput) => void;
 }
@@ -14,6 +15,7 @@ interface AddPatientModalProps {
 export const AddPatientModal: React.FC<AddPatientModalProps> = ({
   isOpen,
   medicines,
+  patients,
   onClose,
   onSubmit
 }) => {
@@ -23,6 +25,9 @@ export const AddPatientModal: React.FC<AddPatientModalProps> = ({
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [communicationPreference, setCommunicationPreference] = useState<CommunicationPreference>('WHATSAPP');
+  const [consentGiven, setConsentGiven] = useState(false);
   const [age, setAge] = useState('');
   const [gender, setGender] = useState<'MALE' | 'FEMALE' | 'OTHER'>('MALE');
   const [address, setAddress] = useState('');
@@ -55,9 +60,21 @@ export const AddPatientModal: React.FC<AddPatientModalProps> = ({
       return;
     }
 
+    const trimmedPhone = phone.trim();
+    const duplicate = patients.find((patient) => patient.phone === trimmedPhone);
+    if (duplicate) {
+      setErrorMessage(
+        `A patient named "${duplicate.name}" is already registered with this mobile number. Open their profile from the directory instead.`
+      );
+      return;
+    }
+
     const patientInput: CreatePatientInput = {
       name: name.trim(),
-      phone: phone.trim(),
+      phone: trimmedPhone,
+      email: email.trim() || undefined,
+      communicationPreference,
+      consentGiven,
       age: age ? parseInt(age, 10) : undefined,
       gender,
       address: address.trim() || undefined,
@@ -142,6 +159,33 @@ export const AddPatientModal: React.FC<AddPatientModalProps> = ({
 
           <div className="settings-grid-2">
             <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input
+                type="email"
+                className="form-input"
+                placeholder="e.g. ramesh.das@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Preferred Contact Channel</label>
+              <select
+                className="form-select"
+                value={communicationPreference}
+                onChange={(e) => setCommunicationPreference(e.target.value as CommunicationPreference)}
+              >
+                <option value="WHATSAPP">WhatsApp</option>
+                <option value="SMS">SMS</option>
+                <option value="CALL">Phone Call</option>
+                <option value="NONE">Do Not Disturb</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="settings-grid-2">
+            <div className="form-group">
               <label className="form-label">Age (Years)</label>
               <input
                 type="number"
@@ -188,6 +232,18 @@ export const AddPatientModal: React.FC<AddPatientModalProps> = ({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
+          </div>
+
+          <div className="initial-med-toggle-wrap">
+            <label className="checkbox-label font-bold" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--primary-green)' }}
+              />
+              <span>Patient has consented to receive refill reminders on their preferred channel</span>
+            </label>
           </div>
 
           {/* Initial Medication Checkbox */}

@@ -84,6 +84,11 @@ export function getRefillUrgency(
 }
 
 /**
+ * Supported user-initiated WhatsApp message templates.
+ */
+export type WhatsAppTemplateType = 'REFILL_REMINDER' | 'ORDER_READY' | 'FOLLOW_UP';
+
+/**
  * Generates polite, personalized refill reminder message in English / Bengali-Indian retail style.
  */
 export function generateRefillReminderMessage(params: {
@@ -110,6 +115,74 @@ export function generateRefillReminderMessage(params: {
 }
 
 /**
+ * Generates an order-ready pickup notification.
+ */
+export function generateOrderReadyMessage(params: {
+  patientName: string;
+  pharmacyName: string;
+  pharmacyPhone: string;
+  medicineName: string;
+  strength: string;
+}): string {
+  const { patientName, pharmacyName, pharmacyPhone, medicineName, strength } = params;
+  return `Namaskar ${patientName},\n\nGood news from *${pharmacyName}*! Your medicine order *${medicineName} (${strength})* is packed and ready for pickup.\n\nPlease collect it at your convenience during store hours, or call us at *${pharmacyPhone}* if you would prefer doorstep delivery.\n\nThank you for choosing ${pharmacyName}!`;
+}
+
+/**
+ * Generates a general patient follow-up message.
+ */
+export function generateFollowUpMessage(params: {
+  patientName: string;
+  pharmacyName: string;
+  pharmacyPhone: string;
+  medicineName: string;
+  strength: string;
+}): string {
+  const { patientName, pharmacyName, pharmacyPhone, medicineName, strength } = params;
+  return `Namaskar ${patientName},\n\nThis is a friendly follow-up from *${pharmacyName}* regarding your prescription *${medicineName} (${strength})*.\n\nWe hope you are doing well. If you need a refill, have any side-effect concerns, or would like to confirm your dosage schedule, please reply here or call us at *${pharmacyPhone}*.\n\nWishing you good health,\n${pharmacyName}`;
+}
+
+/**
+ * Builds the message body for the selected WhatsApp template.
+ */
+export function generateWhatsAppTemplateMessage(
+  template: WhatsAppTemplateType,
+  params: {
+    patientName: string;
+    pharmacyName: string;
+    pharmacyPhone: string;
+    medicineName: string;
+    strength: string;
+    nextRefillDueDate: string;
+  }
+): string {
+  switch (template) {
+    case 'ORDER_READY':
+      return generateOrderReadyMessage(params);
+    case 'FOLLOW_UP':
+      return generateFollowUpMessage(params);
+    case 'REFILL_REMINDER':
+    default:
+      return generateRefillReminderMessage(params);
+  }
+}
+
+/**
+ * Human-readable label for each template type.
+ */
+export function getWhatsAppTemplateLabel(template: WhatsAppTemplateType): string {
+  switch (template) {
+    case 'ORDER_READY':
+      return 'Order Ready';
+    case 'FOLLOW_UP':
+      return 'Follow-up';
+    case 'REFILL_REMINDER':
+    default:
+      return 'Refill Reminder';
+  }
+}
+
+/**
  * Constructs user-initiated WhatsApp link.
  * Confirms recipient and message before opening.
  */
@@ -118,3 +191,4 @@ export function buildWhatsAppLink(phone: string, text: string): string {
   const encodedText = encodeURIComponent(text);
   return `https://wa.me/${formattedPhone}?text=${encodedText}`;
 }
+
