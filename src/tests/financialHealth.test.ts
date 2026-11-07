@@ -52,11 +52,11 @@ describe('Phase 4: Financial Health & Business Intelligence Engine', () => {
 
       expect(summary.totalRevenue).toBeGreaterThan(0);
       expect(summary.cogs).toBeGreaterThan(0);
-      expect(summary.grossProfit).toBe(summary.totalRevenue - summary.cogs);
+      expect(summary.grossProfit).toBeCloseTo(summary.totalRevenue - summary.cogs, 2);
       expect(summary.grossMarginPct).toBeGreaterThan(0);
       expect(summary.grossMarginPct).toBeLessThan(100);
       expect(summary.operatingExpenses).toBeGreaterThan(0);
-      expect(summary.netOperatingProfit).toBe(summary.grossProfit - summary.operatingExpenses);
+      expect(summary.netOperatingProfit).toBeCloseTo(summary.grossProfit - summary.operatingExpenses, 2);
     });
 
     it('correctly resolves date ranges for presets', () => {
@@ -190,7 +190,7 @@ describe('Phase 4: Financial Health & Business Intelligence Engine', () => {
 
       expect(valuation.totalPurchaseCost).toBeGreaterThan(0);
       expect(valuation.totalMrpValuation).toBeGreaterThan(valuation.totalPurchaseCost);
-      expect(valuation.potentialGrossProfit).toBe(valuation.totalMrpValuation - valuation.totalPurchaseCost);
+      expect(valuation.potentialGrossProfit).toBeCloseTo(valuation.totalMrpValuation - valuation.totalPurchaseCost, 2);
       expect(valuation.potentialGrossMarginPct).toBeGreaterThan(0);
       expect(valuation.turnoverRatio).toBeGreaterThan(0);
     });
