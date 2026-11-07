@@ -29,6 +29,7 @@ import { ExpenseManager } from './analytics/ExpenseManager';
 import { InventoryFinancialHealth } from './analytics/InventoryFinancialHealth';
 import { SupplierPayablesView } from './analytics/SupplierPayablesView';
 import { FinancialReportsView } from './analytics/FinancialReportsView';
+import { BusinessDocumentsView } from './analytics/BusinessDocumentsView';
 
 interface AnalyticsViewProps {
   pharmacyId: string;
@@ -49,7 +50,8 @@ type AnalyticsSubTab =
   | 'expenses' 
   | 'inventory' 
   | 'payables' 
-  | 'reports';
+  | 'reports'
+  | 'business-docs';
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   pharmacyId,
@@ -264,6 +266,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           <FileText size={16} />
           <span>Reports</span>
         </button>
+
+        <button
+          type="button"
+          className={`view-tab-btn ${activeSubTab === 'business-docs' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('business-docs')}
+        >
+          <FileText size={16} />
+          <span>Business Docs</span>
+        </button>
       </div>
 
       {/* Tab Panels */}
@@ -330,6 +341,30 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           medicines={medicines}
           payables={localPayables}
           summary={executiveSummary}
+        />
+      )}
+
+      {activeSubTab === 'business-docs' && (
+        <BusinessDocumentsView
+          pharmacy={{ id: pharmacyId, name: pharmacyName } as any}
+          sales={activeSales}
+          expenses={localExpenses}
+          payables={localPayables}
+          batches={batches}
+          movements={[]}
+          periodStart={selectedPreset === 'custom' ? customStart : (() => {
+            const now = new Date();
+            switch (selectedPreset) {
+              case 'today': return now.toISOString().split('T')[0];
+              case 'last7days': return new Date(now.getTime() - 7*24*60*60*1000).toISOString().split('T')[0];
+              case 'last30days': return new Date(now.getTime() - 30*24*60*60*1000).toISOString().split('T')[0];
+              case 'thisMonth': return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+              case 'lastMonth': return new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().split('T')[0];
+              default: return new Date(now.getTime() - 30*24*60*60*1000).toISOString().split('T')[0];
+            }
+          })()}
+          periodEnd={selectedPreset === 'custom' ? customEnd : new Date().toISOString().split('T')[0]}
+          staffUser="Nandan Owner (Demo)"
         />
       )}
     </div>

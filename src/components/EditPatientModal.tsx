@@ -72,7 +72,7 @@ export const EditPatientModal: React.FC<EditPatientModalProps> = ({
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-pat-title">
-      <div className="modal-container">
+      <div className="modal-container modal-patient-modal">
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="icon-badge">
@@ -95,7 +95,7 @@ export const EditPatientModal: React.FC<EditPatientModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="modal-form">
+        <form onSubmit={handleSubmit} className="modal-body modal-form">
           <div className="settings-grid-2">
             <div className="form-group">
               <label className="form-label">Patient Full Name *</label>

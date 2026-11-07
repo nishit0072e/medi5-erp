@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Pill, 
   Lock, 
@@ -9,9 +9,13 @@ import {
   Eye, 
   EyeOff, 
   AlertCircle,
-  Crown
+  Crown,
+  Users,
+  Sparkles,
+  Stethoscope,
+  ShoppingCart
 } from 'lucide-react';
-import { authenticateUser } from '../utils/authService';
+import { authenticateUser, getRegisteredCredentials } from '../utils/authService';
 import { AuthSession } from '../types/pharmacy';
 
 interface LoginScreenProps {
@@ -45,6 +49,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setPassword(pw);
     setErrorMessage(null);
   };
+
+  const registeredCreds = useMemo(() => {
+    const all = getRegisteredCredentials();
+    const defaultEmails = new Set([
+      'admin@medi5.in',
+      'nandan.owner@nandanpharmacy.in',
+      'priya.dispenser@nandanpharmacy.in',
+      'subhash@deshbandhumedical.in',
+      'aniket@deshbandhumedical.in'
+    ]);
+    return all.filter((c) => !defaultEmails.has(c.email.toLowerCase()));
+  }, []);
 
   return (
     <div className="login-page-wrapper">
@@ -159,12 +175,44 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             >
               <div className="cred-role-header">
                 <Store size={14} className="text-primary-green" />
-                <span className="font-bold">Nandan Pharmacy (Owner)</span>
+                <span className="font-bold">Nandan Sen (Store Owner)</span>
               </div>
               <div className="cred-details">
                 <code>nandan.owner@nandanpharmacy.in</code> • <code>password123</code>
               </div>
-              <span className="cred-purpose">Kolkata store — Isolated inventory, POS, & staff</span>
+              <span className="cred-purpose">Executive BI, Financial Health P&L, Staff Management</span>
+            </button>
+
+            <button
+              type="button"
+              className="quick-cred-card tenant-cred"
+              style={{ borderLeft: '3px solid #0284C7' }}
+              onClick={() => handleQuickFill('dr.nathuram@medi5.in', 'doctor123')}
+            >
+              <div className="cred-role-header">
+                <Stethoscope size={14} style={{ color: '#0284C7' }} />
+                <span className="font-bold">Dr. Nathuram Dhankar (Prescriber)</span>
+              </div>
+              <div className="cred-details">
+                <code>dr.nathuram@medi5.in</code> • <code>doctor123</code>
+              </div>
+              <span className="cred-purpose">Clinical Doctor Workspace — E-Rx Creator & Patient Vitals</span>
+            </button>
+
+            <button
+              type="button"
+              className="quick-cred-card tenant-cred"
+              style={{ borderLeft: '3px solid #059669' }}
+              onClick={() => handleQuickFill('priya.dispenser@nandanpharmacy.in', 'password123')}
+            >
+              <div className="cred-role-header">
+                <ShoppingCart size={14} style={{ color: '#059669' }} />
+                <span className="font-bold">Priya Das (Pharmacist / Staff)</span>
+              </div>
+              <div className="cred-details">
+                <code>priya.dispenser@nandanpharmacy.in</code> • <code>password123</code>
+              </div>
+              <span className="cred-purpose">Dispensary Desk — High-Speed POS & OPD Queue</span>
             </button>
 
             <button
@@ -181,6 +229,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               </div>
               <span className="cred-purpose">Siliguri store — Completely isolated tenant</span>
             </button>
+
+            {registeredCreds.length > 0 && (
+              <div style={{ gridColumn: '1 / -1', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary-green-dark)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={13} />
+                  <span>Recently Provisioned Accounts (Click to Fill)</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
+                  {registeredCreds.slice(0, 4).map((c) => (
+                    <button
+                      key={c.email}
+                      type="button"
+                      className="quick-cred-card tenant-cred"
+                      style={{ border: '1.5px solid rgba(16, 185, 129, 0.4)', background: '#F0FDF4' }}
+                      onClick={() => handleQuickFill(c.email, c.password)}
+                    >
+                      <div className="cred-role-header">
+                        <Users size={14} className="text-primary-green" />
+                        <span className="font-bold">{c.name}</span>
+                      </div>
+                      <div className="cred-details">
+                        <code>{c.email}</code> • <code>{c.password}</code>
+                      </div>
+                      <span className="cred-purpose">{c.pharmacyName || 'New Branch'} ({c.role})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <p className="login-isolation-note">

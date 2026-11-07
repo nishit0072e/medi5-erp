@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   Search, 
   ShoppingCart, 
@@ -13,7 +13,11 @@ import {
   Receipt, 
   Info,
   Layers,
-  RotateCcw
+  RotateCcw,
+  Wallet,
+  Banknote,
+  Lock,
+  Barcode
 } from 'lucide-react';
 import { 
   Medicine, 
@@ -56,8 +60,17 @@ export const PosScreen: React.FC<PosScreenProps> = ({
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Active view inside POS: 'counter' or 'history'
-  const [posTab, setPosTab] = useState<'counter' | 'history'>('counter');
+  // Active view inside POS: 'counter' | 'history' | 'shift'
+  const [posTab, setPosTab] = useState<'counter' | 'history' | 'shift'>('counter');
+
+  // Shift & Cash Drawer Reconciliation State
+  const [openingFloat, setOpeningFloat] = useState<number>(() => {
+    const saved = localStorage.getItem('medi5_pos_opening_float');
+    return saved ? parseFloat(saved) || 2000 : 2000;
+  });
+  const [actualCashCounted, setActualCashCounted] = useState<string>('');
+  const [handoverNote, setHandoverNote] = useState<string>('');
+  const [isShiftReconciled, setIsShiftReconciled] = useState<boolean>(false);
 
   // Stable clientSaleToken for current cart session (idempotency)
   const [clientSaleToken, setClientSaleToken] = useState<string>(() => generateSaleToken());
@@ -65,6 +78,41 @@ export const PosScreen: React.FC<PosScreenProps> = ({
   function generateSaleToken(): string {
     return `tok-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   }
+
+  // Shift Financial Metrics computed live from recorded sales
+  const shiftMetrics = useMemo(() => {
+    let cashSalesTotal = 0;
+    let upiSalesTotal = 0;
+    let cardSalesTotal = 0;
+    let totalSalesCount = 0;
+
+    for (const s of sales) {
+      totalSalesCount++;
+      if (s.tenderType === 'CASH') {
+        cashSalesTotal += s.sellingBill;
+      } else if (s.tenderType === 'UPI') {
+        upiSalesTotal += s.sellingBill;
+      } else {
+        cardSalesTotal += s.sellingBill;
+      }
+    }
+
+    const totalRevenue = cashSalesTotal + upiSalesTotal + cardSalesTotal;
+    const expectedCashInTill = openingFloat + cashSalesTotal;
+    const actualCash = actualCashCounted !== '' ? (parseFloat(actualCashCounted) || 0) : expectedCashInTill;
+    const variance = actualCash - expectedCashInTill;
+
+    return {
+      cashSalesTotal,
+      upiSalesTotal,
+      cardSalesTotal,
+      totalRevenue,
+      totalSalesCount,
+      expectedCashInTill,
+      actualCash,
+      variance
+    };
+  }, [sales, openingFloat, actualCashCounted]);
 
   // Pre-calculate available saleable stock per medicine using pure FEFO eligibility
   const medicineStockMap = useMemo(() => {
@@ -163,7 +211,7 @@ export const PosScreen: React.FC<PosScreenProps> = ({
   }, [isBelowCost]);
 
   // Add medicine to cart
-  const handleAddToCart = (medicine: Medicine) => {
+  const handleAddToCart = useCallback((medicine: Medicine) => {
     setErrorMessage(null);
     const available = medicineStockMap.get(medicine.id) || 0;
     if (available <= 0) {
@@ -187,7 +235,138 @@ export const PosScreen: React.FC<PosScreenProps> = ({
         return [...prevCart, { medicineId: medicine.id, quantity: 1 }];
       }
     });
-  };
+  }, [medicineStockMap]);
+
+  // Barcode Scanner Engine & Audio Feedback
+  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
+  const [scanToast, setScanToast] = useState<{ message: string; type: 'success' | 'warn' } | null>(null);
+
+  // Play crisp acoustic confirmation beep via Web Audio API (standard supermarket POS tone)
+  const playScannerBeep = useCallback((success: boolean = true) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      if (success) {
+        osc.frequency.setValueAtTime(1760, audioCtx.currentTime); // High pitch crisp beep (A6)
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.08);
+      } else {
+        osc.frequency.setValueAtTime(320, audioCtx.currentTime); // Low warning buzz
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      }
+    } catch {
+      // AudioContext not supported or restricted by autoplay policy
+    }
+  }, []);
+
+  // Barcode resolution logic: matches barcode, batch lot number, or SKU
+  const processScannedCode = useCallback((code: string) => {
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
+    setLastScannedCode(cleanCode);
+
+    // 1. Try matching physical batch lot number directly (e.g. "DOL-2024-01")
+    const matchedBatch = batches.find(
+      b => b.batchNumber.toLowerCase() === cleanCode.toLowerCase() && b.status === 'ACTIVE'
+    );
+    let targetMedicine: Medicine | undefined;
+    if (matchedBatch) {
+      targetMedicine = medicines.find(m => m.id === matchedBatch.medicineId);
+    }
+
+    // 2. Try matching medicine barcode, name, or SKU ID
+    if (!targetMedicine) {
+      targetMedicine = medicines.find(
+        m => (m as any).barcode === cleanCode ||
+             m.id.toLowerCase() === cleanCode.toLowerCase() ||
+             m.name.toLowerCase() === cleanCode.toLowerCase()
+      );
+    }
+
+    // 3. Fallback: partial name match
+    if (!targetMedicine) {
+      targetMedicine = medicines.find(m =>
+        cleanCode.toLowerCase().includes(m.name.toLowerCase()) ||
+        m.name.toLowerCase().includes(cleanCode.toLowerCase())
+      );
+    }
+
+    if (targetMedicine) {
+      const stock = medicineStockMap.get(targetMedicine.id) || 0;
+      if (stock > 0) {
+        handleAddToCart(targetMedicine);
+        playScannerBeep(true);
+        setScanToast({
+          message: `⚡ Scanned: ${targetMedicine.name} (${cleanCode}) added to cart via FEFO!`,
+          type: 'success'
+        });
+      } else {
+        playScannerBeep(false);
+        setScanToast({
+          message: `⚠️ Scanned: ${targetMedicine.name} is OUT OF STOCK.`,
+          type: 'warn'
+        });
+      }
+    } else {
+      playScannerBeep(false);
+      setScanToast({
+        message: `❌ Unrecognized barcode or lot: "${cleanCode}". Item not found in catalog.`,
+        type: 'warn'
+      });
+    }
+  }, [batches, medicines, medicineStockMap, handleAddToCart, playScannerBeep]);
+
+  // Global USB Barcode Wedge listener
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName);
+      const now = Date.now();
+      const timeDiff = now - lastKeyTime;
+      lastKeyTime = now;
+
+      if (e.key === 'Enter') {
+        if (buffer.length >= 3 && (!isInput || timeDiff < 60)) {
+          processScannedCode(buffer);
+          buffer = '';
+          if (isInput) e.preventDefault();
+        } else {
+          buffer = '';
+        }
+        return;
+      }
+
+      if (e.key.length !== 1) return;
+
+      if (timeDiff > 80) {
+        buffer = e.key;
+      } else {
+        buffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [processScannedCode]);
+
+  useEffect(() => {
+    if (scanToast) {
+      const t = setTimeout(() => setScanToast(null), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [scanToast]);
 
   // Modify cart item quantity
   const handleUpdateQuantity = (medicineId: string, newQty: number) => {
@@ -292,6 +471,29 @@ export const PosScreen: React.FC<PosScreenProps> = ({
 
   return (
     <div className="pos-container">
+      {/* Laser Scanner Instant Feedback Toast */}
+      {scanToast && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '24px',
+          zIndex: 9999,
+          background: scanToast.type === 'success' ? '#065f46' : '#991b1b',
+          color: '#ffffff',
+          padding: '12px 18px',
+          borderRadius: '8px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontWeight: 600,
+          fontSize: '13px'
+        }}>
+          <Barcode size={20} />
+          <span>{scanToast.message}</span>
+        </div>
+      )}
+
       {/* POS Top Navigation Bar */}
       <div className="pos-nav-header">
         <div className="pos-header-left">
@@ -326,10 +528,204 @@ export const PosScreen: React.FC<PosScreenProps> = ({
             <span>Sales History</span>
             <span className="history-badge-count">{sales.length}</span>
           </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={posTab === 'shift'}
+            className={`pos-tab-btn ${posTab === 'shift' ? 'active' : ''}`}
+            onClick={() => setPosTab('shift')}
+          >
+            <Wallet size={14} />
+            <span>Shift & Till Register</span>
+          </button>
         </div>
       </div>
 
-      {posTab === 'history' ? (
+      {posTab === 'shift' ? (
+        /* SHIFT MANAGEMENT & TILL RECONCILIATION VIEW */
+        <div className="pos-history-view">
+          <div className="history-header-bar">
+            <div>
+              <h3>Cash Drawer Shift Management & Till Reconciliation</h3>
+              <p className="text-muted text-xs">
+                Real-time cash till monitoring, expected cash computation, opening float control, and handover reconciliation.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span className={`status-pill ${isShiftReconciled ? 'status-pill-success' : 'status-pill-info'}`}>
+                {isShiftReconciled ? 'Shift Reconciled & Closed' : 'Active Shift Session'}
+              </span>
+            </div>
+          </div>
+
+          {/* Shift Metrics Cards Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px',
+            marginBottom: '20px'
+          }}>
+            <div className="kpi-card">
+              <span className="kpi-label">Opening Float</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                <span className="font-mono font-bold text-lg">₹</span>
+                <input
+                  type="number"
+                  className="form-input"
+                  style={{ width: '120px', padding: '4px 8px', fontSize: '15px', fontWeight: 600 }}
+                  value={openingFloat}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setOpeningFloat(val);
+                    localStorage.setItem('medi5_pos_opening_float', String(val));
+                  }}
+                  disabled={isShiftReconciled}
+                />
+              </div>
+              <span className="text-xs text-muted" style={{ marginTop: '4px' }}>Cash retained in drawer at shift start</span>
+            </div>
+
+            <div className="kpi-card">
+              <span className="kpi-label">Cash Sales Collected</span>
+              <span className="font-mono font-bold text-lg text-primary-green" style={{ marginTop: '4px' }}>
+                ₹{shiftMetrics.cashSalesTotal.toFixed(2)}
+              </span>
+              <span className="text-xs text-muted" style={{ marginTop: '4px' }}>From {sales.filter(s => s.tenderType === 'CASH').length} cash transactions</span>
+            </div>
+
+            <div className="kpi-card" style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+              <span className="kpi-label" style={{ color: '#166534' }}>Expected Cash in Drawer</span>
+              <span className="font-mono font-bold text-xl text-primary-dark" style={{ marginTop: '4px' }}>
+                ₹{shiftMetrics.expectedCashInTill.toFixed(2)}
+              </span>
+              <span className="text-xs text-muted" style={{ marginTop: '4px' }}>Float (₹{openingFloat.toFixed(2)}) + Cash Sales</span>
+            </div>
+
+            <div className="kpi-card">
+              <span className="kpi-label">UPI & Digital Collections</span>
+              <span className="font-mono font-bold text-lg text-primary-dark" style={{ marginTop: '4px' }}>
+                ₹{shiftMetrics.upiSalesTotal.toFixed(2)}
+              </span>
+              <span className="text-xs text-muted" style={{ marginTop: '4px' }}>Card: ₹{shiftMetrics.cardSalesTotal.toFixed(2)}</span>
+            </div>
+
+            <div className="kpi-card">
+              <span className="kpi-label">Total Shift Revenue</span>
+              <span className="font-mono font-bold text-lg text-primary-green" style={{ marginTop: '4px' }}>
+                ₹{shiftMetrics.totalRevenue.toFixed(2)}
+              </span>
+              <span className="text-xs text-muted" style={{ marginTop: '4px' }}>Across {shiftMetrics.totalSalesCount} total invoices</span>
+            </div>
+          </div>
+
+          {/* Reconciliation & Physical Count Calculator */}
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '10px',
+            padding: '20px',
+            marginBottom: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Banknote size={18} className="text-primary-green" />
+              <span>Physical Till Count & Handover Verification</span>
+            </h4>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>Actual Cash Counted in Drawer (₹)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder={`e.g. ${shiftMetrics.expectedCashInTill.toFixed(2)}`}
+                  value={actualCashCounted}
+                  onChange={(e) => setActualCashCounted(e.target.value)}
+                  style={{ fontSize: '16px', fontWeight: 600, padding: '8px 12px' }}
+                  disabled={isShiftReconciled}
+                />
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                  Count all currency notes and coins physically present in the counter drawer.
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>Reconciliation Result</label>
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid',
+                  backgroundColor: Math.abs(shiftMetrics.variance) < 0.01
+                    ? '#f0fdf4'
+                    : shiftMetrics.variance < 0
+                      ? '#fff1f2'
+                      : '#eff6ff',
+                  borderColor: Math.abs(shiftMetrics.variance) < 0.01
+                    ? '#bbf7d0'
+                    : shiftMetrics.variance < 0
+                      ? '#fecdd3'
+                      : '#bfdbfe',
+                  color: Math.abs(shiftMetrics.variance) < 0.01
+                    ? '#166534'
+                    : shiftMetrics.variance < 0
+                      ? '#be123c'
+                      : '#1e40af'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '14px' }}>
+                    {Math.abs(shiftMetrics.variance) < 0.01 ? (
+                      <> <CheckCircle2 size={16} /> Till Balanced Perfectly (₹0.00 Variance) </>
+                    ) : shiftMetrics.variance < 0 ? (
+                      <> <AlertTriangle size={16} /> Cash Shortage: -₹{Math.abs(shiftMetrics.variance).toFixed(2)} </>
+                    ) : (
+                      <> <CheckCircle2 size={16} /> Cash Surplus: +₹{shiftMetrics.variance.toFixed(2)} </>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', marginTop: '4px' }}>
+                    Expected: ₹{shiftMetrics.expectedCashInTill.toFixed(2)} | Counted: ₹{shiftMetrics.actualCash.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '16px' }}>
+              <label className="form-label" style={{ fontWeight: 600 }}>Shift Handover Notes / Drawer Audit Log</label>
+              <textarea
+                className="form-input"
+                rows={2}
+                placeholder="e.g. ₹2,000 float retained for incoming shift cashier. Day's excess cash sealed in drop envelope #402."
+                value={handoverNote}
+                onChange={(e) => setHandoverNote(e.target.value)}
+                disabled={isShiftReconciled}
+              />
+            </div>
+
+            <div style={{ marginTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              {!isShiftReconciled ? (
+                <button
+                  type="button"
+                  className="btn-primary-action"
+                  onClick={() => {
+                    setIsShiftReconciled(true);
+                  }}
+                >
+                  <Lock size={15} />
+                  <span>Lock & Reconcile Shift</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsShiftReconciled(false)}
+                >
+                  <RotateCcw size={14} />
+                  <span>Re-open Shift Drawer</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : posTab === 'history' ? (
         /* SALES HISTORY VIEW */
         <div className="pos-history-view">
           <div className="history-header-bar">
@@ -461,6 +857,52 @@ export const PosScreen: React.FC<PosScreenProps> = ({
                     ×
                   </button>
                 )}
+              </div>
+
+              {/* Hardware Barcode Scanner Status & Simulation Trigger */}
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                alignItems: 'center',
+                marginTop: '10px',
+                padding: '6px 10px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#15803d',
+                  fontSize: '11px',
+                  fontWeight: 600
+                }}>
+                  <Barcode size={15} />
+                  <span>USB Laser Scanner: Listening {lastScannedCode ? `(Last Scanned: ${lastScannedCode})` : '• Scan Anytime'}</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>Simulate Scan:</span>
+                  <select
+                    style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer' }}
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        processScannedCode(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                  >
+                    <option value="" disabled>-- Trigger Laser Scan --</option>
+                    {batches.slice(0, 10).map(b => (
+                      <option key={b.id} value={b.batchNumber}>
+                        Lot: {b.batchNumber} • {medicines.find(m => m.id === b.medicineId)?.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 

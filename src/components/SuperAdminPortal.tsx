@@ -13,11 +13,18 @@ import {
   Sparkles, 
   Search, 
   ArrowRight,
-  X
+  X,
+  KeyRound,
+  Copy,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
-import { PharmacyProfile, UpdatePharmacyInput } from '../types/pharmacy';
+import { PharmacyProfile, CreatePharmacyInput } from '../types/pharmacy';
 import { Medicine, MedicineBatch, SaleRecord, StockMovement } from '../types/inventory';
 import { formatINR } from '../utils/moneyUtils';
+import { generateSecurePassword } from '../utils/authService';
 import {
   calculatePharmacyHealthSummaries,
   calculatePlatformStats,
@@ -33,7 +40,7 @@ interface SuperAdminPortalProps {
   allMovements: StockMovement[];
   onInspectPharmacy: (pharmacyId: string) => void;
   onLogout: () => void;
-  onCreatePharmacy: (input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }) => void;
+  onCreatePharmacy: (input: CreatePharmacyInput) => void;
 }
 
 export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
@@ -64,7 +71,22 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newOwnerName, setNewOwnerName] = useState('');
+  const [newOwnerPassword, setNewOwnerPassword] = useState(() => generateSecurePassword());
+  const [showOwnerPassword, setShowOwnerPassword] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  // Generated credentials modal state
+  const [provisionedCreds, setProvisionedCreds] = useState<{
+    storeName: string;
+    dl: string;
+    city: string;
+    ownerName: string;
+    loginId: string;
+    password: string;
+  } | null>(null);
+  const [copiedText, setCopiedText] = useState(false);
+  const [copiedLogin, setCopiedLogin] = useState(false);
+  const [copiedPass, setCopiedPass] = useState(false);
 
   // Filtered pharmacies
   const filteredPharmacies = useMemo(() => {
@@ -106,6 +128,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     e.preventDefault();
     if (!newStoreName.trim() || !newDl.trim()) return;
 
+    const generatedOwnerEmail = (newEmail.trim() || `${newStoreName.toLowerCase().replace(/[^a-z0-9]/g, '')}.owner@pharmacy.in`).toLowerCase();
+    const generatedOwnerPassword = newOwnerPassword.trim() || generateSecurePassword();
+
     onCreatePharmacy({
       name: newStoreName.trim(),
       legalName: newLegalName.trim() || newStoreName.trim(),
@@ -116,12 +141,22 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
       state: 'West Bengal',
       pincode: '700001',
       phone: newPhone.trim() || '+91 98300 00000',
-      email: newEmail.trim() || `${newStoreName.toLowerCase().replace(/[^a-z0-9]/g, '')}@pharmacy.in`,
+      email: generatedOwnerEmail,
       expiryThresholdDays: 60,
       lowStockThresholdDefault: 15,
       ownerName: newOwnerName.trim() || 'Store Owner',
       ownerPhone: newPhone.trim() || '+91 98300 00000',
-      ownerEmail: newEmail.trim() || 'owner@pharmacy.in'
+      ownerEmail: generatedOwnerEmail,
+      ownerPassword: generatedOwnerPassword
+    });
+
+    setProvisionedCreds({
+      storeName: newStoreName.trim(),
+      dl: newDl.trim().toUpperCase(),
+      city: newCity.trim(),
+      ownerName: newOwnerName.trim() || 'Store Owner',
+      loginId: generatedOwnerEmail,
+      password: generatedOwnerPassword
     });
 
     setIsNewStoreModalOpen(false);
@@ -132,6 +167,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     setNewPhone('');
     setNewEmail('');
     setNewOwnerName('');
+    setNewOwnerPassword(generateSecurePassword());
     setSuccessToast(`New pharmacy tenant registered and provisioned!`);
     setTimeout(() => setSuccessToast(null), 4000);
   };
@@ -608,16 +644,66 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                 />
               </div>
 
+              <div className="settings-grid-2">
+                <div className="form-group">
+                  <label className="form-label">Store Owner Full Name *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={newOwnerName}
+                    onChange={(e) => setNewOwnerName(e.target.value)}
+                    placeholder="e.g. Ratan Mukherjee"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Owner Login Email / ID *</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder={newStoreName ? `${newStoreName.toLowerCase().replace(/[^a-z0-9]/g, '')}.owner@pharmacy.in` : "owner@pharmacy.in"}
+                  />
+                </div>
+              </div>
+
               <div className="form-group">
-                <label className="form-label">Store Owner Full Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={newOwnerName}
-                  onChange={(e) => setNewOwnerName(e.target.value)}
-                  placeholder="e.g. Ratan Mukherjee"
-                  required
-                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Owner Initial Password *</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewOwnerPassword(generateSecurePassword())}
+                    className="btn-text-action text-xs"
+                    style={{ background: 'none', border: 'none', color: 'var(--primary-green)', cursor: 'pointer', fontWeight: 700 }}
+                  >
+                    Regenerate Password
+                  </button>
+                </div>
+                <div className="input-with-icon" style={{ position: 'relative' }}>
+                  <input
+                    type={showOwnerPassword ? 'text' : 'password'}
+                    className="form-input font-mono font-bold"
+                    style={{ paddingRight: '40px' }}
+                    value={newOwnerPassword}
+                    onChange={(e) => setNewOwnerPassword(e.target.value)}
+                    placeholder="e.g. Medi5@8492"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle-btn"
+                    onClick={() => setShowOwnerPassword(!showOwnerPassword)}
+                    aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                  >
+                    {showOwnerPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <span className="text-xs text-muted" style={{ marginTop: '3px', display: 'block' }}>
+                  This password will be immediately active for the store owner on the Medi5 ERP login screen.
+                </span>
               </div>
 
               <div className="modal-actions">
@@ -633,6 +719,121 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Owner Credentials Provisioned Modal */}
+      {provisionedCreds && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-container modal-patient-modal">
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="icon-badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#047857' }}>
+                  <ShieldCheck size={18} />
+                </div>
+                <div>
+                  <h3 className="modal-title">Store Onboarded & Credentials Generated</h3>
+                  <p className="modal-subtitle">Ready for owner handoff and immediate login</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="modal-close-btn" 
+                onClick={() => setProvisionedCreds(null)}
+                aria-label="Close credentials modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body modal-form">
+              <div className="provision-success-banner" style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#F0FDF4', border: '1px solid #BBF7D0', padding: '12px', borderRadius: 'var(--radius-sm)' }}>
+                <CheckCircle2 size={24} style={{ color: '#16A34A', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#14532D' }}>
+                    {provisionedCreds.storeName} ({provisionedCreds.city})
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#15803D' }}>
+                    DL: {provisionedCreds.dl} • Owner: {provisionedCreds.ownerName}
+                  </div>
+                </div>
+              </div>
+
+              <div className="creds-handoff-card" style={{ background: '#FAFDFB', border: '1.5px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+                  <KeyRound size={16} className="text-primary-green" />
+                  <span style={{ fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-main)' }}>Owner Login Credentials</span>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Login ID / Registered Email</span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', border: '1px solid var(--border-subtle)', padding: '6px 10px', borderRadius: '4px', marginTop: '4px' }}>
+                    <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>{provisionedCreds.loginId}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(provisionedCreds.loginId);
+                        setCopiedLogin(true);
+                        setTimeout(() => setCopiedLogin(false), 2000);
+                      }}
+                      title="Copy Login ID"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                    >
+                      {copiedLogin ? <Check size={14} style={{ color: '#16A34A' }} /> : <Copy size={14} style={{ color: 'var(--text-muted)' }} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Initial Password</span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', border: '1px solid var(--border-subtle)', padding: '6px 10px', borderRadius: '4px', marginTop: '4px' }}>
+                    <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 800, color: 'var(--primary-green-dark)' }}>{provisionedCreds.password}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(provisionedCreds.password);
+                        setCopiedPass(true);
+                        setTimeout(() => setCopiedPass(false), 2000);
+                      }}
+                      title="Copy Password"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                    >
+                      {copiedPass ? <Check size={14} style={{ color: '#16A34A' }} /> : <Copy size={14} style={{ color: 'var(--text-muted)' }} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', paddingTop: '4px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Assigned Role</span>
+                  <span style={{ fontWeight: 800, color: '#047857' }}>OWNER (Full Administrative Access)</span>
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    const text = `Medi5 ERP — Store Owner Access Credentials\nStore: ${provisionedCreds.storeName} (${provisionedCreds.city})\nOwner: ${provisionedCreds.ownerName}\nLogin ID: ${provisionedCreds.loginId}\nInitial Password: ${provisionedCreds.password}\nRole: OWNER\nPortal: Sign in at Medi5 ERP Login Screen`;
+                    navigator.clipboard.writeText(text);
+                    setCopiedText(true);
+                    setTimeout(() => setCopiedText(false), 2500);
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Copy size={14} />
+                  <span>{copiedText ? 'Copied Full Summary!' : 'Copy Handoff Details'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary-action"
+                  onClick={() => setProvisionedCreds(null)}
+                >
+                  <span>Done</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -24,14 +24,17 @@ import {
 import { PharmacyProfile, UpdatePharmacyInput, AddMemberInput, PharmacyMember } from '../types/pharmacy';
 import { Patient, PatientMedication, WhatsAppReminderLog, CreatePatientInput, AddMedicationInput, PrescriptionReference } from '../types/patient';
 import { ExpenseRecord, SupplierPayable } from '../types/financials';
+import { Doctor, CreateDoctorInput, UpdateDoctorInput, CreateEPrescriptionInput, EPrescription, EPrescriptionMedication, PrescriptionStatus } from '../types/eprescription';
 import { MOCK_MEDICINES, MOCK_BATCHES, MOCK_MOVEMENTS } from './mockInventory';
 import { MOCK_PHARMACIES } from './mockPharmacies';
 import { MOCK_PATIENTS, MOCK_PATIENT_MEDICATIONS, MOCK_REMINDER_LOGS, MOCK_PRESCRIPTION_REFERENCES } from './mockPatients';
 import { MOCK_EXPENSES, MOCK_SUPPLIER_PAYABLES } from './mockFinancials';
+import { MOCK_DOCTORS, MOCK_E_PRESCRIPTIONS } from './mockEPrescriptions';
 import { parseExpiryDate } from '../utils/dateUtils';
 import { toPaise, fromPaise } from '../utils/moneyUtils';
 import { calculateCartAllocations } from '../utils/fefoAllocation';
 import { calculateRefillDueDate, getRefillUrgency } from '../utils/whatsappUtils';
+import { registerUserCredential, removeUserCredential, generateSecurePassword } from '../utils/authService';
 
 export const DEMO_STORAGE_KEY = 'medi5_demo_inventory_v1';
 export const DEMO_STORAGE_VERSION = 2;
@@ -50,6 +53,8 @@ export interface StoredDemoData {
   prescriptions?: PrescriptionReference[];
   expenses?: ExpenseRecord[];
   payables?: SupplierPayable[];
+  doctors?: Doctor[];
+  ePrescriptions?: EPrescription[];
   lastUpdated: string;
 }
 
@@ -66,6 +71,8 @@ export interface InventoryState {
   prescriptions: PrescriptionReference[];
   expenses: ExpenseRecord[];
   payables: SupplierPayable[];
+  doctors: Doctor[];
+  ePrescriptions: EPrescription[];
 }
 
 export function getTenantInventory(state: InventoryState, pharmacyId: string): InventoryState {
@@ -80,7 +87,9 @@ export function getTenantInventory(state: InventoryState, pharmacyId: string): I
     reminderLogs: (state.reminderLogs || []).filter((l) => l.pharmacyId === pharmacyId),
     prescriptions: (state.prescriptions || []).filter((p) => p.pharmacyId === pharmacyId),
     expenses: (state.expenses || []).filter((e) => e.pharmacyId === pharmacyId),
-    payables: (state.payables || []).filter((p) => p.pharmacyId === pharmacyId)
+    payables: (state.payables || []).filter((p) => p.pharmacyId === pharmacyId),
+    doctors: (state.doctors || []).filter((d) => d.pharmacyId === pharmacyId),
+    ePrescriptions: (state.ePrescriptions || []).filter((p) => p.pharmacyId === pharmacyId)
   };
 }
 
@@ -316,6 +325,40 @@ export function loadDemoInventory(): InventoryState {
         )
       : JSON.parse(JSON.stringify(MOCK_SUPPLIER_PAYABLES));
 
+    const seedDoctors: Doctor[] = JSON.parse(JSON.stringify(MOCK_DOCTORS)).filter((d: Doctor) => pharmacyIdSet.has(d.pharmacyId));
+    const validDoctors: Doctor[] = Array.isArray(parsed.doctors) && parsed.doctors.length > 0
+      ? parsed.doctors.filter(
+          (d) =>
+            d &&
+            typeof d.id === 'string' &&
+            typeof d.pharmacyId === 'string' &&
+            pharmacyIdSet.has(d.pharmacyId)
+        )
+      : seedDoctors;
+    const doctorIdSet = new Set(validDoctors.map(d => d.id));
+    for (const sDoc of seedDoctors) {
+      if (!doctorIdSet.has(sDoc.id)) {
+        validDoctors.push(sDoc);
+      }
+    }
+
+    const seedEPresc: EPrescription[] = JSON.parse(JSON.stringify(MOCK_E_PRESCRIPTIONS)).filter((p: EPrescription) => pharmacyIdSet.has(p.pharmacyId));
+    const validEPrescriptions: EPrescription[] = Array.isArray(parsed.ePrescriptions)
+      ? parsed.ePrescriptions.filter(
+          (p) =>
+            p &&
+            typeof p.id === 'string' &&
+            typeof p.pharmacyId === 'string' &&
+            pharmacyIdSet.has(p.pharmacyId)
+        )
+      : [];
+    const prescRefSet = new Set(validEPrescriptions.map(p => p.referenceNumber));
+    for (const sPresc of seedEPresc) {
+      if (!prescRefSet.has(sPresc.referenceNumber)) {
+        validEPrescriptions.push(sPresc);
+      }
+    }
+
     return {
       medicines: parsed.medicines,
       batches: parsed.batches,
@@ -328,7 +371,9 @@ export function loadDemoInventory(): InventoryState {
       reminderLogs: validReminderLogs,
       prescriptions: validPrescriptions,
       expenses: validExpenses,
-      payables: validPayables
+      payables: validPayables,
+      doctors: validDoctors,
+      ePrescriptions: validEPrescriptions
     };
   } catch (err) {
     console.error('[Medi5 Demo Repository] Failed to load localStorage demo data:', err);
@@ -362,6 +407,8 @@ export function saveDemoInventory(state: InventoryState): boolean {
       prescriptions: state.prescriptions || [],
       expenses: state.expenses || [],
       payables: state.payables || [],
+      doctors: state.doctors || [],
+      ePrescriptions: state.ePrescriptions || [],
       lastUpdated: new Date().toISOString()
     };
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(payload));
@@ -430,6 +477,14 @@ export function resetDemoInventory(pharmacyId?: string): InventoryState {
       ...(current.prescriptions || []).filter((p) => p.pharmacyId !== pharmacyId),
       ...seed.prescriptions.filter((p) => p.pharmacyId === pharmacyId)
     ],
+    doctors: [
+      ...current.doctors.filter((d) => d.pharmacyId !== pharmacyId),
+      ...seed.doctors.filter((d) => d.pharmacyId === pharmacyId)
+    ],
+    ePrescriptions: [
+      ...current.ePrescriptions.filter((p) => p.pharmacyId !== pharmacyId),
+      ...seed.ePrescriptions.filter((p) => p.pharmacyId === pharmacyId)
+    ],
     expenses: [
       ...(current.expenses || []).filter((e) => e.pharmacyId !== pharmacyId),
       ...(seed.expenses || []).filter((e) => e.pharmacyId === pharmacyId)
@@ -457,7 +512,9 @@ export function getInitialSeedState(): InventoryState {
     reminderLogs: JSON.parse(JSON.stringify(MOCK_REMINDER_LOGS)),
     prescriptions: JSON.parse(JSON.stringify(MOCK_PRESCRIPTION_REFERENCES)),
     expenses: JSON.parse(JSON.stringify(MOCK_EXPENSES)),
-    payables: JSON.parse(JSON.stringify(MOCK_SUPPLIER_PAYABLES))
+    payables: JSON.parse(JSON.stringify(MOCK_SUPPLIER_PAYABLES)),
+    doctors: JSON.parse(JSON.stringify(MOCK_DOCTORS)),
+    ePrescriptions: JSON.parse(JSON.stringify(MOCK_E_PRESCRIPTIONS))
   };
 }
 
@@ -671,7 +728,9 @@ export function processStockReceipt(
     reminderLogs: currentState.reminderLogs || [],
     prescriptions: currentState.prescriptions || [],
     expenses: currentState.expenses || [],
-    payables: currentState.payables || []
+    payables: currentState.payables || [],
+    doctors: currentState.doctors || [],
+    ePrescriptions: currentState.ePrescriptions || []
   };
 
   return {
@@ -773,7 +832,9 @@ export function processStockAdjustment(
     reminderLogs: currentState.reminderLogs || [],
     prescriptions: currentState.prescriptions || [],
     expenses: currentState.expenses || [],
-    payables: currentState.payables || []
+    payables: currentState.payables || [],
+    doctors: currentState.doctors || [],
+    ePrescriptions: currentState.ePrescriptions || []
   };
 
   return {
@@ -1032,7 +1093,9 @@ export function processSaleCheckout(
     reminderLogs: currentState.reminderLogs || [],
     prescriptions: currentState.prescriptions || [],
     expenses: currentState.expenses || [],
-    payables: currentState.payables || []
+    payables: currentState.payables || [],
+    doctors: currentState.doctors || [],
+    ePrescriptions: currentState.ePrescriptions || []
   };
 
   return {
@@ -1119,7 +1182,7 @@ export function switchPharmacyTenant(
  */
 export function createPharmacyTenant(
   currentState: InventoryState,
-  input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }
+  input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string; ownerPassword?: string }
 ): InventoryState {
   if (!input.name || !input.name.trim()) {
     throw new Error('Pharmacy name is required.');
@@ -1127,6 +1190,8 @@ export function createPharmacyTenant(
 
   const slug = input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 16);
   const newId = `pharm-${slug}-${Date.now().toString().slice(-4)}`;
+  const ownerEmail = (input.ownerEmail && input.ownerEmail.trim()) || input.email.trim();
+  const ownerPassword = (input.ownerPassword && input.ownerPassword.trim()) || generateSecurePassword();
 
   const newPharmacy: PharmacyProfile = {
     id: newId,
@@ -1150,14 +1215,25 @@ export function createPharmacyTenant(
       {
         id: `user-owner-${Date.now().toString().slice(-4)}`,
         name: input.ownerName.trim() || 'Store Owner',
-        email: input.ownerEmail.trim() || input.email.trim(),
+        email: ownerEmail,
         phone: input.ownerPhone.trim() || input.phone.trim(),
         role: 'OWNER',
         status: 'ACTIVE',
-        joinedDate: new Date().toISOString().split('T')[0]
+        joinedDate: new Date().toISOString().split('T')[0],
+        initialPassword: ownerPassword
       }
     ]
   };
+
+  // Register owner login credentials into auth system
+  registerUserCredential({
+    email: ownerEmail,
+    password: ownerPassword,
+    name: `${newPharmacy.members[0].name} (Owner)`,
+    role: 'OWNER',
+    pharmacyId: newPharmacy.id,
+    pharmacyName: newPharmacy.name
+  });
 
   const pharmacies = [...currentState.pharmacies, newPharmacy];
 
@@ -1184,15 +1260,31 @@ export function addPharmacyStaffMember(
   if (!input.phone || !input.phone.trim()) throw new Error('Staff phone number is required.');
 
   const pharmacy = pharmacies[pIndex];
+  const staffEmail = input.email && input.email.trim()
+    ? input.email.trim()
+    : `${input.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${pharmacy.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.in`;
+  const staffPassword = (input.password && input.password.trim()) || generateSecurePassword();
+
   const newMember: PharmacyMember = {
     id: `user-${Date.now().toString().slice(-4)}-${Math.random().toString(36).slice(2, 5)}`,
     name: input.name.trim(),
-    email: input.email ? input.email.trim() : `${input.name.toLowerCase().replace(/\s+/g, '.')}@pharmacy.in`,
+    email: staffEmail,
     phone: input.phone.trim(),
     role: input.role || 'STAFF',
     status: 'ACTIVE',
-    joinedDate: new Date().toISOString().split('T')[0]
+    joinedDate: new Date().toISOString().split('T')[0],
+    initialPassword: staffPassword
   };
+
+  // Register staff credentials into auth system
+  registerUserCredential({
+    email: staffEmail,
+    password: staffPassword,
+    name: `${newMember.name} (${newMember.role})`,
+    role: newMember.role,
+    pharmacyId: pharmacy.id,
+    pharmacyName: pharmacy.name
+  });
 
   pharmacies[pIndex] = {
     ...pharmacy,
@@ -1229,6 +1321,11 @@ export function removePharmacyStaffMember(
     if (remainingActiveOwners.length === 0) {
       throw new Error('Tenancy security violation: A pharmacy must retain at least one active OWNER.');
     }
+  }
+
+  // Remove credentials from auth system
+  if (targetMember.email) {
+    removeUserCredential(targetMember.email);
   }
 
   pharmacies[pIndex] = {
@@ -2032,6 +2129,507 @@ export function linkSaleToPatient(
     sales: updatedSales
   };
 
+  saveDemoInventory(nextState);
+  return nextState;
+}
+
+
+/**
+ * ========================================================
+ * E-Prescription & OPD Corner Functions
+ * ========================================================
+ */
+function generatePrescriptionRef(pharmacyCode: string): string {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `${pharmacyCode}-EP-${dateStr}-${random}`;
+}
+
+function getPharmacyCode(state: InventoryState, pharmacyId: string): string {
+  const pharmacy = state.pharmacies.find(p => p.id === pharmacyId);
+  if (!pharmacy) return 'MED';
+  // Generate code from pharmacy name: first 3 letters uppercase
+  return pharmacy.name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'MED';
+}
+
+export function createDoctor(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  input: CreateDoctorInput
+): { nextState: InventoryState; doctor: Doctor } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const now = new Date().toISOString();
+  
+  const newDoctor: Doctor = {
+    id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    pharmacyId,
+    name: input.name.trim(),
+    mobile: input.mobile.trim(),
+    email: input.email.trim(),
+    designation: input.designation.trim(),
+    degree: input.degree.trim(),
+    specialization: input.specialization,
+    registrationNumber: input.registrationNumber.trim(),
+    hospitalClinic: input.hospitalClinic?.trim(),
+    isActive: true,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const updatedDoctors = [newDoctor, ...(currentState.doctors || [])];
+  const nextState: InventoryState = {
+    ...currentState,
+    doctors: updatedDoctors
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, doctor: newDoctor };
+}
+
+export function updateDoctor(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  doctorId: string,
+  updates: Partial<UpdateDoctorInput>
+): { nextState: InventoryState; doctor: Doctor } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const doctorIndex = (currentState.doctors || []).findIndex(
+    (d) => d.id === doctorId && d.pharmacyId === pharmacyId
+  );
+  if (doctorIndex < 0) {
+    throw new Error('Doctor record not found for this pharmacy tenant.');
+  }
+
+  const existing = currentState.doctors[doctorIndex];
+  const updated: Doctor = {
+    ...existing,
+    name: updates.name?.trim() || existing.name,
+    mobile: updates.mobile?.trim() || existing.mobile,
+    email: updates.email?.trim() || existing.email,
+    designation: updates.designation?.trim() || existing.designation,
+    degree: updates.degree?.trim() || existing.degree,
+    specialization: updates.specialization || existing.specialization,
+    registrationNumber: updates.registrationNumber?.trim() || existing.registrationNumber,
+    hospitalClinic: updates.hospitalClinic?.trim() || existing.hospitalClinic,
+    isActive: updates.isActive !== undefined ? updates.isActive : existing.isActive,
+    updatedAt: new Date().toISOString()
+  };
+
+  const updatedDoctors = [...(currentState.doctors || [])];
+  updatedDoctors[doctorIndex] = updated;
+
+  const nextState: InventoryState = {
+    ...currentState,
+    doctors: updatedDoctors
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, doctor: updated };
+}
+
+export function deleteDoctor(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  doctorId: string
+): InventoryState {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const updatedDoctors = (currentState.doctors || []).filter(
+    (d) => !(d.id === doctorId && d.pharmacyId === pharmacyId)
+  );
+
+  const nextState: InventoryState = {
+    ...currentState,
+    doctors: updatedDoctors
+  };
+
+  saveDemoInventory(nextState);
+  return nextState;
+}
+
+export function createEPrescription(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  input: CreateEPrescriptionInput
+): { nextState: InventoryState; prescription: EPrescription } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const pharmacyCode = getPharmacyCode(currentState, pharmacyId);
+  const now = new Date().toISOString();
+  
+  // Fetch doctor details
+  let doctor = (currentState.doctors || []).find(d => d.id === input.doctorId && d.pharmacyId === pharmacyId);
+  if (!doctor) {
+    doctor = (currentState.doctors || []).find(d => d.id === input.doctorId);
+  }
+  if (!doctor && (currentState.doctors || []).length > 0) {
+    doctor = currentState.doctors[0];
+  }
+  if (!doctor) {
+    doctor = {
+      id: input.doctorId || 'doc-default',
+      pharmacyId,
+      name: 'Dr. Medical Practitioner',
+      mobile: '+91 98765 43210',
+      email: 'doctor@clinic.com',
+      designation: 'Attending Physician',
+      degree: 'MBBS, MD',
+      specialization: 'GENERAL_PHYSICIAN',
+      registrationNumber: 'MCI-84920',
+      hospitalClinic: 'Medi5 Clinic',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  const referenceNumber = generatePrescriptionRef(pharmacyCode);
+  
+  const SCHEDULE_H1_KEYWORDS = ['alprazolam', 'tramadol', 'diazepam', 'zolpidem', 'cefixime', 'cefpodoxime', 'levofloxacin', 'moxifloxacin', 'meropenem', 'clobazam', 'lorazepam'];
+
+  const medications: EPrescriptionMedication[] = input.medications.map((m, idx) => {
+    const isH1 = m.isScheduleH1 || SCHEDULE_H1_KEYWORDS.some(k => m.medicineName.toLowerCase().includes(k) || (m.genericName && m.genericName.toLowerCase().includes(k)));
+    return {
+      id: `med-${Date.now()}-${idx}`,
+      medicineId: m.medicineId,
+      medicineName: m.medicineName.trim(),
+      genericName: m.genericName?.trim(),
+      genericComposition: m.genericComposition?.trim() || m.genericName?.trim() || m.medicineName.trim(),
+      strength: m.strength.trim(),
+      dosageForm: m.dosageForm,
+      dosage: m.dosage.trim(),
+      frequency: m.frequency,
+      duration: m.duration.trim(),
+      durationType: m.durationType,
+      quantity: m.quantity,
+      instructions: m.instructions?.trim() || '',
+      isLifetime: m.durationType === 'LIFETIME',
+      isScheduleH1: isH1
+    };
+  });
+
+  const hasScheduleH1 = medications.some(m => m.isScheduleH1);
+  const validityDays = input.validityDays || 30;
+  const validUntil = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const maxRefillsAllowed = input.maxRefillsAllowed !== undefined 
+    ? input.maxRefillsAllowed 
+    : (medications.some(m => m.isLifetime) ? 3 : 0);
+  const verificationCode = `VRX-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const tests = input.tests.map((t, idx) => ({
+    id: `test-${Date.now()}-${idx}`,
+    testName: t.testName.trim(),
+    instructions: t.instructions?.trim(),
+    isUrgent: t.isUrgent || false
+  }));
+
+  const followUps = input.followUps.map((f, idx) => ({
+    id: `fu-${Date.now()}-${idx}`,
+    followUpDate: f.followUpDate,
+    frequency: f.frequency,
+    customDays: f.customDays,
+    notes: f.notes?.trim(),
+    isCompleted: false
+  }));
+
+  const nextFollowUpDate = followUps
+    .filter(f => f.followUpDate)
+    .map(f => new Date(f.followUpDate).getTime())
+    .sort((a, b) => a - b)[0];
+
+  const newPrescription: EPrescription = {
+    id: `epresc-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    pharmacyId,
+    referenceNumber,
+    generatedAt: now,
+    generatedBy: doctor.name,
+    
+    doctorId: doctor.id,
+    doctorName: doctor.name,
+    doctorMobile: doctor.mobile,
+    doctorDesignation: doctor.designation,
+    doctorDegree: doctor.degree,
+    doctorSpecialization: doctor.specialization,
+    doctorRegistrationNumber: doctor.registrationNumber,
+    doctorEmail: doctor.email,
+    doctorHospitalClinic: doctor.hospitalClinic,
+    
+    patientId: input.patientId,
+    patientName: input.patientName.trim(),
+    patientAge: input.patientAge,
+    patientGender: input.patientGender,
+    patientPhone: input.patientPhone.trim(),
+    patientEmail: input.patientEmail?.trim(),
+    patientAddress: input.patientAddress?.trim(),
+    patientWeight: input.patientWeight,
+    patientHeight: input.patientHeight,
+    patientKnownAllergies: input.patientKnownAllergies?.trim(),
+    abhaId: input.abhaId?.trim(),
+
+    validityDays,
+    validUntil,
+    maxRefillsAllowed,
+    refillsDispensed: 0,
+    verificationCode,
+    isScheduleH1Prescribed: hasScheduleH1,
+    
+    chiefComplaint: input.chiefComplaint.trim(),
+    diagnosis: input.diagnosis.trim(),
+    checkupsDone: input.checkupsDone.trim(),
+    clinicalNotes: input.clinicalNotes?.trim(),
+    
+    medications,
+    tests,
+    followUps,
+    nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate).toISOString() : undefined,
+    
+    status: 'ACTIVE',
+    dispensedMedications: [],
+    sharedVia: [],
+    
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const updatedPrescriptions = [newPrescription, ...(currentState.ePrescriptions || [])];
+  const nextState: InventoryState = {
+    ...currentState,
+    ePrescriptions: updatedPrescriptions
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, prescription: newPrescription };
+}
+
+export function updateEPrescriptionStatus(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  prescriptionId: string,
+  status: PrescriptionStatus,
+  dispensedMeds?: Array<{ medicationId: string; quantityDispensed: number; batchNumbers: string[] }>,
+  dispensedBy?: string
+): { nextState: InventoryState; prescription: EPrescription } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const prescIndex = (currentState.ePrescriptions || []).findIndex(
+    (p) => p.id === prescriptionId && p.pharmacyId === pharmacyId
+  );
+  if (prescIndex < 0) {
+    throw new Error('E-Prescription not found for this pharmacy tenant.');
+  }
+
+  const existing = currentState.ePrescriptions[prescIndex];
+  const updated: EPrescription = {
+    ...existing,
+    status,
+    updatedAt: new Date().toISOString(),
+    dispensedAt: status === 'DISPENSED' || status === 'PARTIALLY_DISPENSED' ? new Date().toISOString() : existing.dispensedAt,
+    dispensedBy: dispensedBy || existing.dispensedBy,
+    dispensedMedications: dispensedMeds 
+      ? [...existing.dispensedMedications, ...dispensedMeds.map(dm => ({
+          ...dm,
+          dispensedAt: new Date().toISOString()
+        }))]
+      : existing.dispensedMedications
+  };
+
+  const updatedPrescriptions = [...(currentState.ePrescriptions || [])];
+  updatedPrescriptions[prescIndex] = updated;
+
+  const nextState: InventoryState = {
+    ...currentState,
+    ePrescriptions: updatedPrescriptions
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, prescription: updated };
+}
+
+export function shareEPrescription(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  prescriptionId: string,
+  method: 'WHATSAPP' | 'EMAIL' | 'PRINT' | 'SMS'
+): { nextState: InventoryState; prescription: EPrescription } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const prescIndex = (currentState.ePrescriptions || []).findIndex(
+    (p) => p.id === prescriptionId && p.pharmacyId === pharmacyId
+  );
+  if (prescIndex < 0) {
+    throw new Error('E-Prescription not found for this pharmacy tenant.');
+  }
+
+  const existing = currentState.ePrescriptions[prescIndex];
+  const updated: EPrescription = {
+    ...existing,
+    sharedVia: [...new Set([...existing.sharedVia, method])],
+    sharedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const updatedPrescriptions = [...(currentState.ePrescriptions || [])];
+  updatedPrescriptions[prescIndex] = updated;
+
+  const nextState: InventoryState = {
+    ...currentState,
+    ePrescriptions: updatedPrescriptions
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, prescription: updated };
+}
+
+export function registerPatientFromPrescription(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  prescriptionId: string
+): { nextState: InventoryState; patient: any; createdPatientIds: string[] } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const prescription = (currentState.ePrescriptions || []).find(
+    (p) => p.id === prescriptionId && p.pharmacyId === pharmacyId
+  );
+  if (!prescription) {
+    throw new Error('E-Prescription not found for this pharmacy tenant.');
+  }
+
+  // Check if patient already exists by phone
+  let patient = (currentState.patients || []).find(
+    (p) => p.phone === prescription.patientPhone && p.pharmacyId === pharmacyId
+  );
+
+  const createdPatientIds: string[] = [];
+  
+  if (!patient) {
+    // Create new patient
+    const now = new Date().toISOString();
+    patient = {
+      id: `pat-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      pharmacyId,
+      name: prescription.patientName,
+      phone: prescription.patientPhone,
+      email: prescription.patientEmail,
+      age: prescription.patientAge,
+      gender: prescription.patientGender,
+      address: prescription.patientAddress,
+      notes: `Auto-registered from e-prescription ${prescription.referenceNumber}. Allergies: ${prescription.patientKnownAllergies || 'None'}`,
+      status: 'ACTIVE' as any,
+      communicationPreference: 'WHATSAPP',
+      consentGiven: true,
+      consentDate: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const updatedPatients = [patient, ...(currentState.patients || [])];
+    currentState.patients = updatedPatients;
+    createdPatientIds.push(patient.id);
+  }
+
+  // Register lifetime medications
+  const lifetimeMeds = prescription.medications.filter(m => m.isLifetime);
+  for (const med of lifetimeMeds) {
+    // Check if medication already exists for this patient
+    const existingMed = (currentState.refills || []).find(
+      r => r.patientId === patient!.id && r.medicineName === med.medicineName && r.pharmacyId === pharmacyId
+    );
+    if (!existingMed) {
+      const newMed = {
+        id: `refill-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        pharmacyId,
+        patientId: patient!.id,
+        medicineId: med.medicineId || '',
+        medicineName: med.medicineName,
+        strength: med.strength,
+        dosageForm: med.dosageForm,
+        dailyDosage: `${med.dosage} ${med.frequency}`,
+        quantityPerRefill: med.quantity,
+        daysSupply: med.durationType === 'LIFETIME' ? 90 : 30, // 90 days for lifetime
+        lastDispensedDate: new Date().toISOString().split('T')[0],
+        nextRefillDueDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'UPCOMING' as any,
+        reminderCount: 0
+      };
+      currentState.refills = [newMed, ...(currentState.refills || [])];
+    }
+  }
+
+  // For temporary medications, create with expiry based on follow-up
+  const tempMeds = prescription.medications.filter(m => !m.isLifetime);
+  for (const med of tempMeds) {
+    const existingMed = (currentState.refills || []).find(
+      r => r.patientId === patient!.id && r.medicineName === med.medicineName && r.pharmacyId === pharmacyId
+    );
+    if (!existingMed) {
+      // Calculate days supply from duration string (e.g., "7 days", "30 days")
+      let daysSupply = 30;
+      const durationMatch = med.duration.match(/(\d+)\s*(day|week|month)/i);
+      if (durationMatch) {
+        const num = parseInt(durationMatch[1]);
+        const unit = durationMatch[2].toLowerCase();
+        if (unit.startsWith('day')) daysSupply = num;
+        else if (unit.startsWith('week')) daysSupply = num * 7;
+        else if (unit.startsWith('month')) daysSupply = num * 30;
+      }
+      
+      const newMed = {
+        id: `refill-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        pharmacyId,
+        patientId: patient!.id,
+        medicineId: med.medicineId || '',
+        medicineName: med.medicineName,
+        strength: med.strength,
+        dosageForm: med.dosageForm,
+        dailyDosage: `${med.dosage} ${med.frequency}`,
+        quantityPerRefill: med.quantity,
+        daysSupply,
+        lastDispensedDate: new Date().toISOString().split('T')[0],
+        nextRefillDueDate: new Date(Date.now() + daysSupply * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'UPCOMING' as any,
+        reminderCount: 0
+      };
+      currentState.refills = [newMed, ...(currentState.refills || [])];
+    }
+  }
+
+  const nextState: InventoryState = { ...currentState };
+  saveDemoInventory(nextState);
+  return { nextState, patient: patient!, createdPatientIds };
+}
+
+export function cleanupTemporaryPatients(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined
+): InventoryState {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  // Find patients who only have temporary medications and whose follow-up period has expired
+  const patientsToCheck = (currentState.patients || []).filter(p => p.pharmacyId === pharmacyId);
+  
+  for (const patient of patientsToCheck) {
+    const patientMeds = (currentState.refills || []).filter(r => r.patientId === patient.id && r.pharmacyId === pharmacyId);
+    const hasLifetimeMeds = patientMeds.some(_med => {
+      // Check if medication was originally from a lifetime prescription
+      const prescription = (currentState.ePrescriptions || []).find(p => 
+        p.pharmacyId === pharmacyId && 
+        p.medications.some(m => m.medicineName === _med.medicineName && m.isLifetime)
+      );
+      return !!prescription;
+    });
+    
+    if (!hasLifetimeMeds && patientMeds.length > 0) {
+      // Check if all medications have expired their follow-up period
+      const latestFollowUp = patientMeds.reduce((latest, med) => {
+        const medDate = new Date(med.nextRefillDueDate).getTime();
+        return medDate > latest ? medDate : latest;
+      }, 0);
+      
+      // If latest follow-up was more than 30 days ago, clean up
+      if (Date.now() - latestFollowUp > 30 * 24 * 60 * 60 * 1000) {
+        // Remove patient and their medications
+        currentState.patients = currentState.patients!.filter(p => p.id !== patient.id);
+        currentState.refills = currentState.refills!.filter(r => r.patientId !== patient.id);
+      }
+    }
+  }
+
+  const nextState: InventoryState = { ...currentState };
   saveDemoInventory(nextState);
   return nextState;
 }

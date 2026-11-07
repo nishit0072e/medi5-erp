@@ -94,7 +94,7 @@ export interface MockCredential {
   email: string;
   password: string;
   name: string;
-  role: 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF';
+  role: 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF' | 'DOCTOR';
   pharmacyId?: string;
   pharmacyName?: string;
 }
@@ -108,6 +108,14 @@ export const SUPER_ADMIN_CREDENTIAL: MockCredential = {
 
 export const MOCK_CREDENTIALS: MockCredential[] = [
   SUPER_ADMIN_CREDENTIAL,
+  {
+    email: 'dr.nathuram@medi5.in',
+    password: 'doctor123',
+    name: 'Dr. Nathuram Dhankar (Prescriber)',
+    role: 'DOCTOR',
+    pharmacyId: 'pharm-nandan-kolkata',
+    pharmacyName: 'Nandan Pharmacy'
+  },
   {
     email: 'nandan.owner@nandanpharmacy.in',
     password: 'password123',

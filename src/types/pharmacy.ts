@@ -8,7 +8,7 @@
  * 4. Dispensing receipts and inventory audit trail reference active pharmacy tenant metadata.
  */
 
-export type MembershipRole = 'OWNER' | 'MANAGER' | 'STAFF';
+export type MembershipRole = 'OWNER' | 'MANAGER' | 'STAFF' | 'DOCTOR';
 export type MembershipStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'REVOKED';
 
 export interface PharmacyMember {
@@ -19,6 +19,7 @@ export interface PharmacyMember {
   role: MembershipRole;
   status: MembershipStatus;
   joinedDate: string;
+  initialPassword?: string;
 }
 
 export interface PharmacyProfile {
@@ -63,9 +64,17 @@ export interface AddMemberInput {
   email: string;
   phone: string;
   role: MembershipRole;
+  password?: string;
 }
 
-export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF';
+export interface CreatePharmacyInput extends UpdatePharmacyInput {
+  ownerName: string;
+  ownerPhone: string;
+  ownerEmail: string;
+  ownerPassword?: string;
+}
+
+export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF' | 'DOCTOR';
 
 export interface AuthUser {
   id: string;

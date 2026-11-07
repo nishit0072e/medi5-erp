@@ -4,6 +4,10 @@ import {
   getStoredSession, 
   saveStoredSession, 
   clearStoredSession,
+  registerUserCredential,
+  removeUserCredential,
+  generateSecurePassword,
+  getRegisteredCredentials,
   AUTH_SESSION_KEY
 } from '../utils/authService';
 
@@ -131,6 +135,83 @@ describe('Stage 3.x Authentication & Tenant Isolation Engine', () => {
       const feeRate = 1.5; // 1.5%
       const feeDue = (totalProfit * feeRate) / 100;
       expect(feeDue).toBe(375);
+    });
+  });
+
+  describe('Dynamic User ID & Password Provisioning for Onboarded Stores and Staff', () => {
+    it('generates secure readable initial passwords', () => {
+      const pw1 = generateSecurePassword();
+      const pw2 = generateSecurePassword('Store@');
+      expect(pw1).toMatch(/^Medi5@\d{4}$/);
+      expect(pw2).toMatch(/^Store@\d{4}$/);
+    });
+
+    it('provisions and registers new store owner credentials and allows authentication', () => {
+      registerUserCredential({
+        email: 'apollo.owner@apollopharmacy.in',
+        password: 'Password@2026',
+        name: 'Amitabh Sen (Owner)',
+        role: 'OWNER',
+        pharmacyId: 'pharm-apollo-kolkata',
+        pharmacyName: 'Apollo Chemist'
+      });
+
+      const session = authenticateUser('apollo.owner@apollopharmacy.in', 'Password@2026');
+      expect(session).toBeDefined();
+      expect(session.user.role).toBe('OWNER');
+      expect(session.user.pharmacyId).toBe('pharm-apollo-kolkata');
+      expect(session.user.pharmacyName).toBe('Apollo Chemist');
+      expect(session.user.name).toContain('Amitabh Sen');
+    });
+
+    it('provisions and registers new staff credentials with role-based scoping', () => {
+      registerUserCredential({
+        email: 'sourav.staff@apollopharmacy.in',
+        password: 'Medi5@9911',
+        name: 'Sourav Ghosh (Staff)',
+        role: 'STAFF',
+        pharmacyId: 'pharm-apollo-kolkata',
+        pharmacyName: 'Apollo Chemist'
+      });
+
+      const session = authenticateUser('sourav.staff@apollopharmacy.in', 'Medi5@9911');
+      expect(session.user.role).toBe('STAFF');
+      expect(session.user.pharmacyId).toBe('pharm-apollo-kolkata');
+      expect(session.user.email).toBe('sourav.staff@apollopharmacy.in');
+    });
+
+    it('removes user credentials when employee access is revoked', () => {
+      registerUserCredential({
+        email: 'temp.staff@pharmacy.in',
+        password: 'Pass@1234',
+        name: 'Temporary Staff',
+        role: 'STAFF',
+        pharmacyId: 'pharm-nandan-kolkata'
+      });
+
+      expect(authenticateUser('temp.staff@pharmacy.in', 'Pass@1234')).toBeDefined();
+
+      removeUserCredential('temp.staff@pharmacy.in');
+
+      expect(() => {
+        authenticateUser('temp.staff@pharmacy.in', 'Pass@1234');
+      }).toThrow('Invalid Login ID or password. Unauthorized access rejected.');
+    });
+
+    it('persists and returns dynamic credentials via getRegisteredCredentials', () => {
+      registerUserCredential({
+        email: 'manager.bob@pharmacy.in',
+        password: 'SecurePassword1',
+        name: 'Bob Manager',
+        role: 'MANAGER',
+        pharmacyId: 'pharm-nandan-kolkata'
+      });
+
+      const all = getRegisteredCredentials();
+      const bob = all.find((c) => c.email === 'manager.bob@pharmacy.in');
+      expect(bob).toBeDefined();
+      expect(bob?.password).toBe('SecurePassword1');
+      expect(bob?.role).toBe('MANAGER');
     });
   });
 });

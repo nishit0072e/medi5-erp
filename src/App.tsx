@@ -15,6 +15,8 @@ import { PatientsView } from './components/PatientsView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { LoginScreen } from './components/LoginScreen';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
+import { DoctorCorner } from './components/DoctorCorner';
+import { OPDCorner } from './components/OPDCorner';
 import { getStoredSession, clearStoredSession, AUTH_SESSION_KEY } from './utils/authService';
 import { 
   DEMO_STORAGE_KEY,
@@ -43,9 +45,15 @@ import {
   reactivateRefill,
   createPrescription,
   deletePrescription,
-  linkSaleToPatient
+  linkSaleToPatient,
+  createDoctor,
+  updateDoctor,
+  createEPrescription,
+  updateEPrescriptionStatus,
+  shareEPrescription,
+  registerPatientFromPrescription
 } from './data/demoRepository';
-import { UpdatePharmacyInput, AddMemberInput, AuthSession } from './types/pharmacy';
+import { UpdatePharmacyInput, CreatePharmacyInput, AddMemberInput, AuthSession } from './types/pharmacy';
 import { CreatePatientInput, AddMedicationInput, UpdatePatientInput, PrescriptionReference } from './types/patient';
 import { calculateAllSummaries, calculateInventoryKpis } from './utils/inventoryCalculations';
 import { 
@@ -93,6 +101,12 @@ export const App: React.FC = () => {
       || (isSuperAdmin ? pharmacies[0] : undefined);
   }, [pharmacies, effectivePharmacyId, isSuperAdmin]);
 
+  // Generate pharmacy code from name (first 3 letters uppercase)
+  const pharmacyCode = useMemo(() => {
+    if (!activePharmacy) return 'MED';
+    return activePharmacy.name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'MED';
+  }, [activePharmacy]);
+
   const tenantInventory = useMemo(
     () => getTenantInventory(demoState, effectivePharmacyId),
     [demoState, effectivePharmacyId]
@@ -105,11 +119,20 @@ export const App: React.FC = () => {
     patients = [],
     refills = [],
     reminderLogs = [],
-    prescriptions = []
+    prescriptions = [],
+    doctors = [],
+    ePrescriptions = []
   } = tenantInventory;
 
-  // 2. Navigation & View State ('inventory' | 'pos' | 'ledger' | 'patients' | 'settings')
-const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings'>('inventory');
+  // 2. Navigation & View State
+  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner'>(() => {
+    const current = getStoredSession();
+    if (current?.user.role === 'DOCTOR') return 'doctor-corner';
+    if (current?.user.role === 'STAFF') return 'pos';
+    if (current?.user.role === 'MANAGER') return 'inventory';
+    if (current?.user.role === 'OWNER') return 'analytics';
+    return 'inventory';
+  });
   const activeTab: 'inventory' | 'patients' | 'analytics' | 'settings' = 
     activeView === 'settings'
       ? 'settings'
@@ -117,7 +140,11 @@ const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'p
         ? 'patients'
         : activeView === 'analytics'
           ? 'analytics'
-          : 'inventory';
+          : activeView === 'doctor-corner'
+            ? 'patients'
+            : activeView === 'opd-corner'
+              ? 'patients'
+              : 'inventory';
 
   // Urgent Refills Count
   const refillsDueCount = useMemo(() => {
@@ -450,7 +477,7 @@ const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'p
     }
   };
 
-  const handleCreatePharmacy = (input: UpdatePharmacyInput & { ownerName: string; ownerPhone: string; ownerEmail: string }) => {
+  const handleCreatePharmacy = (input: CreatePharmacyInput) => {
     try {
       const nextState = createPharmacyTenant(demoState, input);
       if (!persistTenantChange(nextState, 'Registration failed: unable to persist the new pharmacy.')) return;
@@ -633,9 +660,90 @@ const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'p
     }
   };
 
+  // =========================================================================
+  // E-Prescription & OPD Corner Handlers
+  // =========================================================================
+
+  const handleCreateDoctor = (input: any) => {
+    try {
+      const result = createDoctor(demoState, effectivePharmacyId, input);
+      if (!persistTenantChange(result.nextState, 'Doctor registration failed: unable to persist changes.')) return;
+      showToast('success', `Registered Dr. ${result.doctor.name} successfully.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to register doctor');
+    }
+  };
+
+  const handleUpdateDoctor = (doctorId: string, input: any) => {
+    try {
+      const result = updateDoctor(demoState, effectivePharmacyId, doctorId, input);
+      if (!persistTenantChange(result.nextState, 'Doctor update failed: unable to persist changes.')) return;
+      showToast('success', `Dr. ${result.doctor.name} updated successfully.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to update doctor');
+    }
+  };
+
+  const handleCreateEPrescription = (input: any) => {
+    try {
+      const result = createEPrescription(demoState, effectivePharmacyId, input);
+      if (!persistTenantChange(result.nextState, 'E-Prescription creation failed: unable to persist changes.')) return;
+      showToast('success', `E-Prescription ${result.prescription.referenceNumber} created for ${result.prescription.patientName}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to create e-prescription');
+    }
+  };
+
+  const handleDispensePrescription = (prescriptionId: string, dispensedMeds: Array<{ medicationId: string; quantityDispensed: number; batchNumbers: string[] }>) => {
+    try {
+      const result = updateEPrescriptionStatus(demoState, effectivePharmacyId, prescriptionId, 'PARTIALLY_DISPENSED', dispensedMeds, session!.user.name);
+      if (!persistTenantChange(result.nextState, 'Dispensing failed: unable to persist changes.')) return;
+      showToast('success', `Medications dispensed for prescription ${result.prescription.referenceNumber}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to dispense medications');
+    }
+  };
+
+  const handleSharePrescription = (prescriptionId: string, method: 'WHATSAPP' | 'EMAIL' | 'PRINT' | 'SMS') => {
+    try {
+      const result = shareEPrescription(demoState, effectivePharmacyId, prescriptionId, method);
+      if (!persistTenantChange(result.nextState, 'Sharing failed: unable to persist changes.')) return;
+      showToast('success', `Prescription shared via ${method}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to share prescription');
+    }
+  };
+
+  const handleRegisterPatientFromPrescription = (prescriptionId: string) => {
+    try {
+      const result = registerPatientFromPrescription(demoState, effectivePharmacyId, prescriptionId);
+      if (!persistTenantChange(result.nextState, 'Patient registration failed: unable to persist changes.')) return;
+      showToast('success', `Patient ${result.patient.name} registered with ${result.createdPatientIds.length} lifetime medication(s).`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to register patient');
+    }
+  };
+
+  // Temporary patient cleanup is available via demoRepository.cleanupTemporaryPatients()
+
   // Unauthenticated Barrier -> Render Login Screen with strict authentication
   if (!session) {
-    return <LoginScreen onLoginSuccess={(newSession) => setSession(newSession)} />;
+    return (
+      <LoginScreen
+        onLoginSuccess={(newSession) => {
+          setSession(newSession);
+          if (newSession.user.role === 'DOCTOR') {
+            setActiveView('doctor-corner');
+          } else if (newSession.user.role === 'STAFF') {
+            setActiveView('pos');
+          } else if (newSession.user.role === 'MANAGER') {
+            setActiveView('inventory');
+          } else if (newSession.user.role === 'OWNER') {
+            setActiveView('analytics');
+          }
+        }}
+      />
+    );
   }
 
   // Super Admin Platform Command Center (when not actively inspecting a specific store)
@@ -781,6 +889,40 @@ const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'p
             onBackToInventory={() => setActiveView('inventory')}
           />
         </main>
+      ) : activeView === 'doctor-corner' ? (
+        /* Doctor's Corner - E-Prescription Creation */
+        <main className="inventory-list-section" role="region" aria-label="Doctor's Corner E-Prescription">
+          <DoctorCorner
+            _pharmacyId={activePharmacy.id}
+            _pharmacyName={activePharmacy.name}
+            pharmacyCode={pharmacyCode}
+            doctors={doctors}
+            medicines={medicines}
+            onCreatePrescription={handleCreateEPrescription}
+            onCreateDoctor={handleCreateDoctor}
+            onUpdateDoctor={handleUpdateDoctor}
+            onBackToInventory={() => setActiveView('inventory')}
+            _staffUser={session.user.name}
+          />
+        </main>
+      ) : activeView === 'opd-corner' ? (
+        /* OPD Corner - Pharmacist E-Prescription Management */
+        <main className="inventory-list-section" role="region" aria-label="OPD Corner E-Prescriptions">
+          <OPDCorner
+            pharmacyId={activePharmacy.id}
+            pharmacyName={activePharmacy.name}
+            pharmacyCode={pharmacyCode}
+            prescriptions={ePrescriptions}
+            medicines={medicines}
+            batches={batches}
+            patients={patients}
+            onDispensePrescription={handleDispensePrescription}
+            onSharePrescription={handleSharePrescription}
+            onRegisterPatientFromPrescription={handleRegisterPatientFromPrescription}
+            onBackToInventory={() => setActiveView('inventory')}
+            staffUser={session.user.name}
+          />
+        </main>
       ) : activeView === 'patients' ? (
         /* Phase 3: Patients & WhatsApp Refill Reminders Screen */
         <main className="inventory-list-section" role="region" aria-label="Patients and Refills">
@@ -831,6 +973,8 @@ const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'p
           <StockLedgerView 
             movements={movements} 
             onOpenReceiveModal={() => setIsReceiveOpen(true)}
+            prescriptions={ePrescriptions}
+            pharmacy={activePharmacy}
           />
         </main>
       )}

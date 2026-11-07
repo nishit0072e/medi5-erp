@@ -70,7 +70,7 @@ export const AddPrescriptionModal: React.FC<AddPrescriptionModalProps> = ({
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-rx-title">
-      <div className="modal-container">
+      <div className="modal-container modal-patient-modal">
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="icon-badge">
@@ -93,7 +93,7 @@ export const AddPrescriptionModal: React.FC<AddPrescriptionModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="modal-form">
+        <form onSubmit={handleSubmit} className="modal-body modal-form">
           <div className="settings-grid-2">
             <div className="form-group">
               <label className="form-label">Reference Number *</label>

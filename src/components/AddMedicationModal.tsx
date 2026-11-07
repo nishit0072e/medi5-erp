@@ -68,7 +68,7 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="modal-form">
+        <form onSubmit={handleSubmit} className="modal-body modal-form">
           <div className="form-group">
             <label className="form-label">Select Medicine *</label>
             <select

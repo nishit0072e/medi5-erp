@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Pill, 
   AlertCircle, 
@@ -12,15 +12,20 @@ import {
   LogOut,
   ArrowRight,
   Users,
-  BarChart2
+  BarChart2,
+  Stethoscope,
+  FileText,
+  Wifi,
+  WifiOff,
+  ShieldCheck
 } from 'lucide-react';
 import { AuthUser } from '../types/pharmacy';
 
 interface HeaderProps {
   pharmacyName?: string;
   location?: string;
-  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings';
-  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings') => void;
+  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner';
+  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner') => void;
   onOpenReceive: () => void;
   onResetDemo: () => void;
   ledgerCount: number;
@@ -49,6 +54,34 @@ export const Header: React.FC<HeaderProps> = ({
   isSuperAdminInspecting = false,
   onReturnToSuperAdmin
 }) => {
+  const userRole = currentUser?.role || 'OWNER';
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const canAccessTab = (tab: HeaderProps['activeView']) => {
+    if (userRole === 'SUPER_ADMIN' || userRole === 'OWNER') return true;
+    if (userRole === 'DOCTOR') {
+      return tab === 'doctor-corner' || tab === 'patients' || tab === 'opd-corner';
+    }
+    if (userRole === 'STAFF') {
+      return tab === 'pos' || tab === 'opd-corner' || tab === 'inventory' || tab === 'patients';
+    }
+    if (userRole === 'MANAGER') {
+      return tab === 'inventory' || tab === 'pos' || tab === 'opd-corner' || tab === 'ledger' || tab === 'patients' || tab === 'settings';
+    }
+    return true;
+  };
+
   return (
     <>
       {/* Super Admin Inspection Mode Banner */}
@@ -88,6 +121,50 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="header-actions-group">
+            {/* Real-Time Connectivity & PWA Offline Shield */}
+            <div
+              title={isOnline ? 'Local FEFO & Cart Engine Synchronized' : 'Offline mode active. Sales continue to be recorded locally.'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '4px 9px',
+                borderRadius: '12px',
+                background: isOnline ? '#ecfdf5' : '#fffbeb',
+                border: isOnline ? '1px solid #a7f3d0' : '1px solid #fde68a',
+                color: isOnline ? '#047857' : '#b45309'
+              }}
+            >
+              {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
+              <span>{isOnline ? 'Online' : 'Offline'}</span>
+            </div>
+
+            {/* Drug License Compliance Watchdog */}
+            <button
+              type="button"
+              className="clickable-badge"
+              onClick={() => onViewChange('settings')}
+              title="Statutory Drug License Form 20B/21B Valid till 2027"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '4px 9px',
+                borderRadius: '12px',
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#166534',
+                cursor: 'pointer'
+              }}
+            >
+              <ShieldCheck size={13} />
+              <span>DL 20B/21B</span>
+            </button>
+
             <button 
               type="button"
               className="pharmacy-badge clickable-badge" 
@@ -122,92 +199,132 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              className="btn-receive-top"
-              onClick={onOpenReceive}
-              aria-label="Receive Stock"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              <span>Receive Stock</span>
-            </button>
+            {currentUser?.role !== 'DOCTOR' && (
+              <button
+                type="button"
+                className="btn-receive-top"
+                onClick={onOpenReceive}
+                aria-label="Receive Stock"
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                <span>Receive Stock</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* View Switcher Tabs */}
         <div className="header-view-tabs" role="tablist" aria-label="Primary View Switcher">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === 'inventory'}
-            className={`view-tab-btn ${activeView === 'inventory' ? 'active' : ''}`}
-            onClick={() => onViewChange('inventory')}
-          >
-            <ListFilter size={15} />
-            <span title="Medicine Inventory">Inventory</span>
-          </button>
+          {canAccessTab('inventory') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'inventory'}
+              className={`view-tab-btn ${activeView === 'inventory' ? 'active' : ''}`}
+              onClick={() => onViewChange('inventory')}
+            >
+              <ListFilter size={15} />
+              <span title="Medicine Inventory">Inventory</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === 'pos'}
-            className={`view-tab-btn ${activeView === 'pos' ? 'active' : ''}`}
-            onClick={() => onViewChange('pos')}
-          >
-            <ShoppingCart size={15} />
-            <span title="Counter POS">POS</span>
-            {salesCount > 0 && <span className="tab-count-badge pos-tab-badge">{salesCount}</span>}
-          </button>
+          {canAccessTab('pos') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'pos'}
+              className={`view-tab-btn ${activeView === 'pos' ? 'active' : ''}`}
+              onClick={() => onViewChange('pos')}
+            >
+              <ShoppingCart size={15} />
+              <span title="Counter POS">POS</span>
+              {salesCount > 0 && <span className="tab-count-badge pos-tab-badge">{salesCount}</span>}
+            </button>
+          )}
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === 'ledger'}
-            className={`view-tab-btn ${activeView === 'ledger' ? 'active' : ''}`}
-            onClick={() => onViewChange('ledger')}
-          >
-            <History size={15} />
-            <span title="Stock Ledger">Ledger</span>
-            <span className="tab-count-badge">{ledgerCount}</span>
-          </button>
+          {canAccessTab('ledger') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'ledger'}
+              className={`view-tab-btn ${activeView === 'ledger' ? 'active' : ''}`}
+              onClick={() => onViewChange('ledger')}
+            >
+              <History size={15} />
+              <span title="Stock Ledger">Ledger</span>
+              <span className="tab-count-badge">{ledgerCount}</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === 'patients'}
-            className={`view-tab-btn ${activeView === 'patients' ? 'active' : ''}`}
-            onClick={() => onViewChange('patients')}
-          >
-            <Users size={15} />
-            <span title="Patients & WhatsApp Refills">Patients</span>
-            {refillsDueCount > 0 ? (
-              <span className="tab-count-badge pos-tab-badge">{refillsDueCount}</span>
-            ) : patientsCount > 0 ? (
-              <span className="tab-count-badge">{patientsCount}</span>
-            ) : null}
-          </button>
+          {canAccessTab('patients') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'patients'}
+              className={`view-tab-btn ${activeView === 'patients' ? 'active' : ''}`}
+              onClick={() => onViewChange('patients')}
+            >
+              <Users size={15} />
+              <span title="Patients & WhatsApp Refills">Patients</span>
+              {refillsDueCount > 0 ? (
+                <span className="tab-count-badge pos-tab-badge">{refillsDueCount}</span>
+              ) : patientsCount > 0 ? (
+                <span className="tab-count-badge">{patientsCount}</span>
+              ) : null}
+            </button>
+          )}
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === 'analytics'}
-            className={`view-tab-btn ${activeView === 'analytics' ? 'active' : ''}`}
-            onClick={() => onViewChange('analytics')}
-          >
-            <BarChart2 size={15} />
-            <span title="Financial Health & Leakage Analytics">Analytics</span>
-          </button>
+          {canAccessTab('analytics') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'analytics'}
+              className={`view-tab-btn ${activeView === 'analytics' ? 'active' : ''}`}
+              onClick={() => onViewChange('analytics')}
+            >
+              <BarChart2 size={15} />
+              <span title="Financial Health & Leakage Analytics">Analytics</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeView === 'settings'}
-            className={`view-tab-btn ${activeView === 'settings' ? 'active' : ''}`}
-            onClick={() => onViewChange('settings')}
-          >
-            <Building2 size={15} />
-            <span title="Pharmacy Profile">Profile</span>
-          </button>
+          {canAccessTab('doctor-corner') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'doctor-corner'}
+              className={`view-tab-btn ${activeView === 'doctor-corner' ? 'active' : ''}`}
+              onClick={() => onViewChange('doctor-corner')}
+            >
+              <Stethoscope size={15} />
+              <span title="Doctor's Corner - E-Prescription">{userRole === 'DOCTOR' ? 'Dr. Desk' : 'Dr. Corner'}</span>
+            </button>
+          )}
+
+          {canAccessTab('opd-corner') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'opd-corner'}
+              className={`view-tab-btn ${activeView === 'opd-corner' ? 'active' : ''}`}
+              onClick={() => onViewChange('opd-corner')}
+            >
+              <FileText size={15} />
+              <span title="OPD Corner - E-Prescriptions">OPD Corner</span>
+            </button>
+          )}
+
+          {canAccessTab('settings') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'settings'}
+              className={`view-tab-btn ${activeView === 'settings' ? 'active' : ''}`}
+              onClick={() => onViewChange('settings')}
+            >
+              <Building2 size={15} />
+              <span title="Pharmacy Profile">Profile</span>
+            </button>
+          )}
         </div>
       </header>
 

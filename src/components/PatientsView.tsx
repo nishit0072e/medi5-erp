@@ -405,7 +405,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
             type="button"
             className="btn-primary-action"
@@ -421,8 +421,8 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
               className="btn-back-counter"
               onClick={onBackToInventory}
             >
-              <span>Back to Inventory</span>
               <ArrowRight size={14} />
+              <span>Back to Inventory</span>
             </button>
           )}
         </div>
@@ -1075,6 +1075,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           onSubmit={(input) => {
             onCreatePatient(input);
             showFeedback(`Registered patient "${input.name}" successfully!`);
+            setIsAddPatientOpen(false);
           }}
         />
       )}
