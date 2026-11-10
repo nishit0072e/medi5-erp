@@ -121,7 +121,19 @@ a:focus-visible {
 
 @media (min-width: 1200px) {
   :root {
-    --app-max-width: 1240px;
+    --app-max-width: 1360px;
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --app-max-width: 1540px;
+  }
+}
+
+@media (min-width: 1800px) {
+  :root {
+    --app-max-width: 1720px;
   }
 }
 
@@ -507,7 +519,8 @@ a:focus-visible {
   margin-bottom: 10px;
 }
 
-.search-icon {
+.search-input-wrapper > .search-icon,
+.search-input-wrapper .search-icon {
   position: absolute;
   left: 14px;
   top: 50%;
@@ -5210,37 +5223,43 @@ a:focus-visible {
 }
 
 .queue-search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
   gap: 8px;
-  background-color: #FFFFFF;
-  border: 1.5px solid var(--border-subtle);
+  background-color: #FFFFFF !important;
+  border: 1.5px solid var(--border-subtle) !important;
   border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  flex: 1;
-  max-width: 320px;
+  padding: 8px 12px !important;
+  min-width: 240px;
+  max-width: 360px;
+  flex: 1 1 240px;
 }
 
-.queue-search-box .search-icon {
+.queue-search-box .queue-search-icon,
+.queue-search-box .search-icon,
+.queue-search-icon {
   position: static !important;
   transform: none !important;
   left: auto !important;
   top: auto !important;
-  flex-shrink: 0;
-  color: var(--text-muted);
+  flex-shrink: 0 !important;
+  color: var(--text-muted) !important;
+  pointer-events: none;
 }
 
 .queue-search-box:focus-within {
-  border-color: var(--primary-green);
+  border-color: var(--primary-green) !important;
+  box-shadow: 0 0 0 3px rgba(19, 99, 75, 0.12) !important;
 }
 
 .queue-search-input {
-  border: none;
-  outline: none;
-  width: 100%;
-  font-size: 0.82rem;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  width: 100% !important;
+  font-size: 0.85rem !important;
+  background: transparent !important;
+  color: var(--text-main) !important;
 }
 
 /* Refill Cards */
@@ -5662,6 +5681,43 @@ a:focus-visible {
 .modal-container.modal-patient-modal {
   max-width: 580px;
   width: 100%;
+  max-height: 90vh;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-dialog-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 90vh;
+  max-height: 90dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.modal-dialog-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-dialog-footer {
+  flex-shrink: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border-subtle);
+  background-color: #FAFDFB;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  z-index: 10;
 }
 
 .modal-patient-modal .settings-grid-2 {

@@ -603,7 +603,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             </div>
 
             <div className="queue-search-box">
-              <Search size={14} className="search-icon" />
+              <Search size={14} className="queue-search-icon" />
               <input
                 type="text"
                 placeholder="Search patient, phone, or medicine..."
@@ -753,7 +753,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
           <div className="directory-controls">
             <div className="queue-search-box directory-search">
-              <Search size={14} className="search-icon" />
+              <Search size={14} className="queue-search-icon" />
               <input
                 type="text"
                 placeholder="Search by name, phone, email or address..."

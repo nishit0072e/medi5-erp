@@ -73,159 +73,164 @@ export const EditPatientModal: React.FC<EditPatientModalProps> = ({
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-pat-title">
       <div className="modal-container modal-patient-modal">
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="icon-badge">
-              <UserCog size={18} />
+        <form onSubmit={handleSubmit} className="modal-dialog-form">
+          {/* Header */}
+          <div className="modal-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="icon-badge">
+                <UserCog size={18} />
+              </div>
+              <div>
+                <h3 id="edit-pat-title" className="modal-title">Edit Patient Profile</h3>
+                <p className="modal-subtitle">Update demographics, status and communication consent</p>
+              </div>
             </div>
-            <div>
-              <h3 id="edit-pat-title" className="modal-title">Edit Patient Profile</h3>
-              <p className="modal-subtitle">Update demographics, status and communication consent</p>
+            <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+          </div>
+
+          {errorMessage && (
+            <div className="settings-alert alert-error" role="alert" style={{ margin: '14px 16px 0 16px' }}>
+              <AlertCircle size={16} />
+              <span>{errorMessage}</span>
             </div>
-          </div>
-          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">
-            <X size={18} />
-          </button>
-        </div>
+          )}
 
-        {errorMessage && (
-          <div className="settings-alert alert-error" role="alert" style={{ margin: '14px 16px 0 16px' }}>
-            <AlertCircle size={16} />
-            <span>{errorMessage}</span>
-          </div>
-        )}
+          {/* Form Body (Scrollable) */}
+          <div className="modal-body modal-dialog-scrollable">
+            <div className="settings-grid-2">
+              <div className="form-group">
+                <label className="form-label">Patient Full Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
 
-        <form onSubmit={handleSubmit} className="modal-body modal-form">
-          <div className="settings-grid-2">
+              <div className="form-group">
+                <label className="form-label">WhatsApp Mobile Number *</label>
+                <div className="input-with-icon">
+                  <span className="input-icon font-mono font-bold text-xs" style={{ left: '10px' }}>+91</span>
+                  <input
+                    type="tel"
+                    className="form-input pl-icon font-mono font-bold"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    maxLength={10}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-grid-2">
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  placeholder="patient@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Age (Years)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  className="form-input font-mono"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="settings-grid-2">
+              <div className="form-group">
+                <label className="form-label">Gender</label>
+                <select
+                  className="form-select"
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER')}
+                >
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Patient Status</label>
+                <select
+                  className="form-select"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as PatientStatus)}
+                >
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                </select>
+              </div>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Patient Full Name *</label>
+              <label className="form-label">Address / Neighborhood</label>
               <input
                 type="text"
                 className="form-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">WhatsApp Mobile Number *</label>
-              <div className="input-with-icon">
-                <span className="input-icon font-mono font-bold text-xs" style={{ left: '10px' }}>+91</span>
-                <input
-                  type="tel"
-                  className="form-input pl-icon font-mono font-bold"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  maxLength={10}
-                  required
-                />
+              <label className="form-label">Patient Notes / Medical History</label>
+              <input
+                type="text"
+                className="form-input"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-grid-2">
+              <div className="form-group">
+                <label className="form-label">Preferred Communication Channel</label>
+                <select
+                  className="form-select"
+                  value={communicationPreference}
+                  onChange={(e) => setCommunicationPreference(e.target.value as CommunicationPreference)}
+                >
+                  <option value="WHATSAPP">WhatsApp</option>
+                  <option value="SMS">SMS</option>
+                  <option value="CALL">Phone Call</option>
+                  <option value="NONE">Do Not Contact</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Communication Consent</label>
+                <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', paddingTop: '10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={consentGiven}
+                    onChange={(e) => setConsentGiven(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: 'var(--primary-green)' }}
+                  />
+                  <span className="text-xs">Patient consents to refill reminders</span>
+                </label>
               </div>
             </div>
           </div>
 
-          <div className="settings-grid-2">
-            <div className="form-group">
-              <label className="form-label">Email Address</label>
-              <input
-                type="email"
-                className="form-input"
-                placeholder="patient@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Age (Years)</label>
-              <input
-                type="number"
-                min="1"
-                max="120"
-                className="form-input font-mono"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="settings-grid-2">
-            <div className="form-group">
-              <label className="form-label">Gender</label>
-              <select
-                className="form-select"
-                value={gender}
-                onChange={(e) => setGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER')}
-              >
-                <option value="MALE">Male</option>
-                <option value="FEMALE">Female</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Patient Status</label>
-              <select
-                className="form-select"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as PatientStatus)}
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Address / Neighborhood</label>
-            <input
-              type="text"
-              className="form-input"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Patient Notes / Medical History</label>
-            <input
-              type="text"
-              className="form-input"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-
-          <div className="settings-grid-2">
-            <div className="form-group">
-              <label className="form-label">Preferred Communication Channel</label>
-              <select
-                className="form-select"
-                value={communicationPreference}
-                onChange={(e) => setCommunicationPreference(e.target.value as CommunicationPreference)}
-              >
-                <option value="WHATSAPP">WhatsApp</option>
-                <option value="SMS">SMS</option>
-                <option value="CALL">Phone Call</option>
-                <option value="NONE">Do Not Contact</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Communication Consent</label>
-              <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', paddingTop: '10px' }}>
-                <input
-                  type="checkbox"
-                  checked={consentGiven}
-                  onChange={(e) => setConsentGiven(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary-green)' }}
-                />
-                <span className="text-xs">Patient consents to refill reminders</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="modal-actions">
+          {/* Modal Actions Footer (Always pinned at bottom) */}
+          <div className="modal-footer modal-dialog-footer">
             <button type="button" className="btn-secondary" onClick={onClose}>
               Cancel
             </button>
