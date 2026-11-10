@@ -17,6 +17,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
 import { DoctorCorner } from './components/DoctorCorner';
 import { OPDCorner } from './components/OPDCorner';
+import { AppointmentsView } from './components/AppointmentsView';
 import { getStoredSession, clearStoredSession, AUTH_SESSION_KEY } from './utils/authService';
 import { 
   DEMO_STORAGE_KEY,
@@ -51,10 +52,17 @@ import {
   createEPrescription,
   updateEPrescriptionStatus,
   shareEPrescription,
-  registerPatientFromPrescription
+  registerPatientFromPrescription,
+  createAppointment,
+  updateAppointmentStatus,
+  updateAppointmentVitals,
+  deleteAppointment,
+  saveDoctorSchedule,
+  deleteDoctorSchedule
 } from './data/demoRepository';
 import { UpdatePharmacyInput, CreatePharmacyInput, AddMemberInput, AuthSession } from './types/pharmacy';
 import { CreatePatientInput, AddMedicationInput, UpdatePatientInput, PrescriptionReference } from './types/patient';
+import { CreateAppointmentInput, PatientVitals, AppointmentStatus, DoctorScheduleSlot, PaymentStatus, PaymentMode } from './types/appointment';
 import { calculateAllSummaries, calculateInventoryKpis } from './utils/inventoryCalculations';
 import { 
   StockFilter, 
@@ -121,11 +129,13 @@ export const App: React.FC = () => {
     reminderLogs = [],
     prescriptions = [],
     doctors = [],
-    ePrescriptions = []
+    ePrescriptions = [],
+    appointments = [],
+    doctorSchedules = []
   } = tenantInventory;
 
   // 2. Navigation & View State
-  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner'>(() => {
+  const [activeView, setActiveView] = useState<'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner' | 'appointments'>(() => {
     const current = getStoredSession();
     if (current?.user.role === 'DOCTOR') return 'doctor-corner';
     if (current?.user.role === 'STAFF') return 'pos';
@@ -150,6 +160,12 @@ export const App: React.FC = () => {
   const refillsDueCount = useMemo(() => {
     return refills.filter((r) => r.status === 'DUE_TODAY' || r.status === 'OVERDUE').length;
   }, [refills]);
+
+  // Today Waiting Appointments Count
+  const todayAppointmentsWaitingCount = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return appointments.filter((a) => a.appointmentDate === today && a.status === 'WAITING').length;
+  }, [appointments]);
 
   // Analytics computation for leakage score and analytics view
   const [analyticsPeriod] = useState<AnalyticsPeriod>(() => getDefaultPeriod());
@@ -724,6 +740,72 @@ export const App: React.FC = () => {
     }
   };
 
+  // Phase 6: Doctor Appointments & Chamber Operations
+  const handleCreateAppointment = (input: CreateAppointmentInput) => {
+    try {
+      const result = createAppointment(demoState, effectivePharmacyId, input, session?.user.name || 'Reception Staff');
+      if (!persistTenantChange(result.nextState, 'Booking failed: unable to persist changes.')) return;
+      showToast('success', `Appointment booked! Token #${result.appointment.tokenNumber} assigned for ${result.appointment.patientName}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to book appointment');
+    }
+  };
+
+  const handleUpdateAppointmentStatus = (
+    appointmentId: string, 
+    status: AppointmentStatus, 
+    paymentStatus?: PaymentStatus, 
+    paymentMode?: PaymentMode
+  ) => {
+    try {
+      const result = updateAppointmentStatus(demoState, effectivePharmacyId, appointmentId, status, paymentStatus, paymentMode);
+      if (!persistTenantChange(result.nextState, 'Status update failed: unable to persist changes.')) return;
+      showToast('success', `Appointment status updated to ${status}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to update appointment status');
+    }
+  };
+
+  const handleUpdateAppointmentVitals = (appointmentId: string, vitals: PatientVitals) => {
+    try {
+      const result = updateAppointmentVitals(demoState, effectivePharmacyId, appointmentId, vitals);
+      if (!persistTenantChange(result.nextState, 'Vitals recording failed: unable to persist changes.')) return;
+      showToast('success', `Clinical vitals recorded for ${result.appointment.patientName}.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to record vitals');
+    }
+  };
+
+  const handleDeleteAppointment = (appointmentId: string) => {
+    try {
+      const nextState = deleteAppointment(demoState, effectivePharmacyId, appointmentId);
+      if (!persistTenantChange(nextState, 'Cancellation failed: unable to persist changes.')) return;
+      showToast('success', 'Appointment removed.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to remove appointment');
+    }
+  };
+
+  const handleSaveDoctorSchedule = (schedule: Omit<DoctorScheduleSlot, 'id' | 'pharmacyId'> & { id?: string }) => {
+    try {
+      const result = saveDoctorSchedule(demoState, effectivePharmacyId, schedule);
+      if (!persistTenantChange(result.nextState, 'Schedule save failed: unable to persist changes.')) return;
+      showToast('success', `Doctor shift for ${result.schedule.doctorName} saved.`);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to save schedule');
+    }
+  };
+
+  const handleDeleteDoctorSchedule = (scheduleId: string) => {
+    try {
+      const nextState = deleteDoctorSchedule(demoState, effectivePharmacyId, scheduleId);
+      if (!persistTenantChange(nextState, 'Schedule deletion failed: unable to persist changes.')) return;
+      showToast('success', 'Doctor shift removed.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to remove schedule');
+    }
+  };
+
   // Temporary patient cleanup is available via demoRepository.cleanupTemporaryPatients()
 
   // Unauthenticated Barrier -> Render Login Screen with strict authentication
@@ -811,6 +893,7 @@ export const App: React.FC = () => {
         salesCount={sales.length}
         patientsCount={patients.length}
         refillsDueCount={refillsDueCount}
+        appointmentsCount={todayAppointmentsWaitingCount}
         currentUser={session.user}
         onLogout={handleLogout}
         isSuperAdminInspecting={Boolean(isSuperAdmin && inspectingPharmacyId)}
@@ -921,6 +1004,30 @@ export const App: React.FC = () => {
             onRegisterPatientFromPrescription={handleRegisterPatientFromPrescription}
             onBackToInventory={() => setActiveView('inventory')}
             staffUser={session.user.name}
+          />
+        </main>
+      ) : activeView === 'appointments' ? (
+        /* Phase 6: Doctor Appointments & Chamber Management */
+        <main className="inventory-list-section" role="region" aria-label="Doctor Appointments & Chamber Queue">
+          <AppointmentsView
+            pharmacy={activePharmacy}
+            doctors={doctors}
+            patients={patients}
+            appointments={appointments}
+            schedules={doctorSchedules}
+            staffUser={session.user.name}
+            userRole={session.user.role}
+            onCreateAppointment={handleCreateAppointment}
+            onUpdateStatus={handleUpdateAppointmentStatus}
+            onUpdateVitals={handleUpdateAppointmentVitals}
+            onDeleteAppointment={handleDeleteAppointment}
+            onSaveSchedule={handleSaveDoctorSchedule}
+            onDeleteSchedule={handleDeleteDoctorSchedule}
+            onStartConsultationBridge={(appointment) => {
+              setActiveView('doctor-corner');
+              showToast('success', `Bridged appointment #${appointment.tokenNumber} into Doctor Corner for ${appointment.patientName}.`);
+            }}
+            onBackToInventory={() => setActiveView('inventory')}
           />
         </main>
       ) : activeView === 'patients' ? (

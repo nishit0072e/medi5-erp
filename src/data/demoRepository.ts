@@ -25,11 +25,13 @@ import { PharmacyProfile, UpdatePharmacyInput, AddMemberInput, PharmacyMember } 
 import { Patient, PatientMedication, WhatsAppReminderLog, CreatePatientInput, AddMedicationInput, PrescriptionReference } from '../types/patient';
 import { ExpenseRecord, SupplierPayable } from '../types/financials';
 import { Doctor, CreateDoctorInput, UpdateDoctorInput, CreateEPrescriptionInput, EPrescription, EPrescriptionMedication, PrescriptionStatus } from '../types/eprescription';
+import { DoctorAppointment, DoctorScheduleSlot, CreateAppointmentInput, PatientVitals, AppointmentStatus, PaymentStatus, PaymentMode } from '../types/appointment';
 import { MOCK_MEDICINES, MOCK_BATCHES, MOCK_MOVEMENTS } from './mockInventory';
 import { MOCK_PHARMACIES } from './mockPharmacies';
 import { MOCK_PATIENTS, MOCK_PATIENT_MEDICATIONS, MOCK_REMINDER_LOGS, MOCK_PRESCRIPTION_REFERENCES } from './mockPatients';
 import { MOCK_EXPENSES, MOCK_SUPPLIER_PAYABLES } from './mockFinancials';
 import { MOCK_DOCTORS, MOCK_E_PRESCRIPTIONS } from './mockEPrescriptions';
+import { MOCK_APPOINTMENTS, MOCK_DOCTOR_SCHEDULES } from './mockAppointments';
 import { parseExpiryDate } from '../utils/dateUtils';
 import { toPaise, fromPaise } from '../utils/moneyUtils';
 import { calculateCartAllocations } from '../utils/fefoAllocation';
@@ -55,6 +57,8 @@ export interface StoredDemoData {
   payables?: SupplierPayable[];
   doctors?: Doctor[];
   ePrescriptions?: EPrescription[];
+  appointments?: DoctorAppointment[];
+  doctorSchedules?: DoctorScheduleSlot[];
   lastUpdated: string;
 }
 
@@ -73,6 +77,8 @@ export interface InventoryState {
   payables: SupplierPayable[];
   doctors: Doctor[];
   ePrescriptions: EPrescription[];
+  appointments: DoctorAppointment[];
+  doctorSchedules: DoctorScheduleSlot[];
 }
 
 export function getTenantInventory(state: InventoryState, pharmacyId: string): InventoryState {
@@ -89,7 +95,9 @@ export function getTenantInventory(state: InventoryState, pharmacyId: string): I
     expenses: (state.expenses || []).filter((e) => e.pharmacyId === pharmacyId),
     payables: (state.payables || []).filter((p) => p.pharmacyId === pharmacyId),
     doctors: (state.doctors || []).filter((d) => d.pharmacyId === pharmacyId),
-    ePrescriptions: (state.ePrescriptions || []).filter((p) => p.pharmacyId === pharmacyId)
+    ePrescriptions: (state.ePrescriptions || []).filter((p) => p.pharmacyId === pharmacyId),
+    appointments: (state.appointments || []).filter((a) => a.pharmacyId === pharmacyId),
+    doctorSchedules: (state.doctorSchedules || []).filter((s) => s.pharmacyId === pharmacyId)
   };
 }
 
@@ -359,6 +367,37 @@ export function loadDemoInventory(): InventoryState {
       }
     }
 
+    // Validate or seed appointments
+    const seedAppointments: DoctorAppointment[] = JSON.parse(JSON.stringify(MOCK_APPOINTMENTS)).filter((a: DoctorAppointment) => pharmacyIdSet.has(a.pharmacyId));
+    const validAppointments: DoctorAppointment[] = Array.isArray(parsed.appointments)
+      ? parsed.appointments.filter(
+          (a) =>
+            a &&
+            typeof a.id === 'string' &&
+            typeof a.pharmacyId === 'string' &&
+            pharmacyIdSet.has(a.pharmacyId) &&
+            typeof a.patientName === 'string'
+        )
+      : seedAppointments;
+    const aptIdSet = new Set(validAppointments.map(a => a.id));
+    for (const sApt of seedAppointments) {
+      if (!aptIdSet.has(sApt.id)) {
+        validAppointments.push(sApt);
+      }
+    }
+
+    // Validate or seed doctor schedules
+    const seedSchedules: DoctorScheduleSlot[] = JSON.parse(JSON.stringify(MOCK_DOCTOR_SCHEDULES)).filter((s: DoctorScheduleSlot) => pharmacyIdSet.has(s.pharmacyId));
+    const validSchedules: DoctorScheduleSlot[] = Array.isArray(parsed.doctorSchedules)
+      ? parsed.doctorSchedules.filter(
+          (s) =>
+            s &&
+            typeof s.id === 'string' &&
+            typeof s.pharmacyId === 'string' &&
+            pharmacyIdSet.has(s.pharmacyId)
+        )
+      : seedSchedules;
+
     return {
       medicines: parsed.medicines,
       batches: parsed.batches,
@@ -373,7 +412,9 @@ export function loadDemoInventory(): InventoryState {
       expenses: validExpenses,
       payables: validPayables,
       doctors: validDoctors,
-      ePrescriptions: validEPrescriptions
+      ePrescriptions: validEPrescriptions,
+      appointments: validAppointments,
+      doctorSchedules: validSchedules
     };
   } catch (err) {
     console.error('[Medi5 Demo Repository] Failed to load localStorage demo data:', err);
@@ -409,6 +450,8 @@ export function saveDemoInventory(state: InventoryState): boolean {
       payables: state.payables || [],
       doctors: state.doctors || [],
       ePrescriptions: state.ePrescriptions || [],
+      appointments: state.appointments || [],
+      doctorSchedules: state.doctorSchedules || [],
       lastUpdated: new Date().toISOString()
     };
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(payload));
@@ -485,6 +528,14 @@ export function resetDemoInventory(pharmacyId?: string): InventoryState {
       ...current.ePrescriptions.filter((p) => p.pharmacyId !== pharmacyId),
       ...seed.ePrescriptions.filter((p) => p.pharmacyId === pharmacyId)
     ],
+    appointments: [
+      ...(current.appointments || []).filter((a) => a.pharmacyId !== pharmacyId),
+      ...seed.appointments.filter((a) => a.pharmacyId === pharmacyId)
+    ],
+    doctorSchedules: [
+      ...(current.doctorSchedules || []).filter((s) => s.pharmacyId !== pharmacyId),
+      ...seed.doctorSchedules.filter((s) => s.pharmacyId === pharmacyId)
+    ],
     expenses: [
       ...(current.expenses || []).filter((e) => e.pharmacyId !== pharmacyId),
       ...(seed.expenses || []).filter((e) => e.pharmacyId === pharmacyId)
@@ -514,7 +565,9 @@ export function getInitialSeedState(): InventoryState {
     expenses: JSON.parse(JSON.stringify(MOCK_EXPENSES)),
     payables: JSON.parse(JSON.stringify(MOCK_SUPPLIER_PAYABLES)),
     doctors: JSON.parse(JSON.stringify(MOCK_DOCTORS)),
-    ePrescriptions: JSON.parse(JSON.stringify(MOCK_E_PRESCRIPTIONS))
+    ePrescriptions: JSON.parse(JSON.stringify(MOCK_E_PRESCRIPTIONS)),
+    appointments: JSON.parse(JSON.stringify(MOCK_APPOINTMENTS)),
+    doctorSchedules: JSON.parse(JSON.stringify(MOCK_DOCTOR_SCHEDULES))
   };
 }
 
@@ -730,7 +783,9 @@ export function processStockReceipt(
     expenses: currentState.expenses || [],
     payables: currentState.payables || [],
     doctors: currentState.doctors || [],
-    ePrescriptions: currentState.ePrescriptions || []
+    ePrescriptions: currentState.ePrescriptions || [],
+    appointments: currentState.appointments || [],
+    doctorSchedules: currentState.doctorSchedules || []
   };
 
   return {
@@ -834,7 +889,9 @@ export function processStockAdjustment(
     expenses: currentState.expenses || [],
     payables: currentState.payables || [],
     doctors: currentState.doctors || [],
-    ePrescriptions: currentState.ePrescriptions || []
+    ePrescriptions: currentState.ePrescriptions || [],
+    appointments: currentState.appointments || [],
+    doctorSchedules: currentState.doctorSchedules || []
   };
 
   return {
@@ -1095,7 +1152,9 @@ export function processSaleCheckout(
     expenses: currentState.expenses || [],
     payables: currentState.payables || [],
     doctors: currentState.doctors || [],
-    ePrescriptions: currentState.ePrescriptions || []
+    ePrescriptions: currentState.ePrescriptions || [],
+    appointments: currentState.appointments || [],
+    doctorSchedules: currentState.doctorSchedules || []
   };
 
   return {
@@ -2630,6 +2689,310 @@ export function cleanupTemporaryPatients(
   }
 
   const nextState: InventoryState = { ...currentState };
+  saveDemoInventory(nextState);
+  return nextState;
+}
+
+// ============================================================================
+// PHASE 6: INTEGRATED DOCTOR APPOINTMENT & CHAMBER MANAGEMENT REPOSITORY
+// ============================================================================
+
+/**
+ * Creates a new doctor appointment with auto-assigned daily running token number.
+ */
+export function createAppointment(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  input: CreateAppointmentInput,
+  bookedBy: string = 'Staff Reception'
+): { nextState: InventoryState; appointment: DoctorAppointment } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+
+  if (!input.patientName || !input.patientName.trim()) {
+    throw new Error('Appointment booking failed: Patient name is required.');
+  }
+
+  if (!input.patientPhone || !input.patientPhone.trim()) {
+    throw new Error('Appointment booking failed: Patient contact number is required.');
+  }
+
+  if (!input.doctorId) {
+    throw new Error('Appointment booking failed: Doctor must be selected.');
+  }
+
+  const doctor = (currentState.doctors || []).find((d) => d.id === input.doctorId && d.pharmacyId === pharmacyId);
+  if (!doctor) {
+    throw new Error(`Doctor with ID "${input.doctorId}" not found for this pharmacy.`);
+  }
+
+  const apptDate = input.appointmentDate || new Date().toISOString().split('T')[0];
+
+  // Calculate next running daily token for this doctor on this date
+  const doctorDateAppointments = (currentState.appointments || []).filter(
+    (a) => a.pharmacyId === pharmacyId && a.doctorId === doctor.id && a.appointmentDate === apptDate
+  );
+  const tokenNumber = doctorDateAppointments.length + 1;
+  const docCode = doctor.id.replace(/[^0-9]/g, '') || '1';
+  const dateCompact = apptDate.replace(/-/g, '');
+  const tokenCode = `APT-${dateCompact}-D${docCode}-${String(tokenNumber).padStart(3, '0')}`;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const initialStatus: AppointmentStatus = apptDate === todayStr ? 'WAITING' : 'SCHEDULED';
+
+  const newAppointment: DoctorAppointment = {
+    id: `apt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    pharmacyId,
+    tokenNumber,
+    tokenCode,
+    doctorId: doctor.id,
+    doctorName: doctor.name,
+    doctorSpecialization: doctor.specialization,
+    doctorDegree: doctor.degree,
+    patientId: input.patientId,
+    patientName: input.patientName.trim(),
+    patientPhone: input.patientPhone.trim(),
+    patientAge: Number(input.patientAge) || 30,
+    patientGender: input.patientGender || 'MALE',
+    patientEmail: input.patientEmail?.trim() || undefined,
+    patientAddress: input.patientAddress?.trim() || undefined,
+    appointmentDate: apptDate,
+    timeSlot: input.timeSlot || '10:00 AM - 10:15 AM',
+    type: input.type || 'IN_CLINIC',
+    priority: input.priority || 'NORMAL',
+    status: initialStatus,
+    chiefComplaint: input.chiefComplaint?.trim() || 'General Health Checkup & Consultation',
+    vitals: input.vitals,
+    consultationFee: typeof input.consultationFee === 'number' ? input.consultationFee : 500,
+    paymentStatus: input.paymentStatus || 'PENDING',
+    paymentMode: input.paymentMode,
+    notes: input.notes?.trim() || undefined,
+    bookedBy,
+    bookedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const nextState: InventoryState = {
+    ...currentState,
+    appointments: [newAppointment, ...(currentState.appointments || [])]
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, appointment: newAppointment };
+}
+
+/**
+ * Updates an appointment's operational status and lifecycle timestamps.
+ */
+export function updateAppointmentStatus(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  appointmentId: string,
+  newStatus: AppointmentStatus,
+  paymentStatus?: PaymentStatus,
+  paymentMode?: PaymentMode
+): { nextState: InventoryState; appointment: DoctorAppointment } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const aptIndex = (currentState.appointments || []).findIndex(
+    (a) => a.id === appointmentId && a.pharmacyId === pharmacyId
+  );
+
+  if (aptIndex === -1) {
+    throw new Error(`Appointment with ID "${appointmentId}" not found for this pharmacy.`);
+  }
+
+  const existing = currentState.appointments[aptIndex];
+  const now = new Date().toISOString();
+
+  const updated: DoctorAppointment = {
+    ...existing,
+    status: newStatus,
+    paymentStatus: paymentStatus || existing.paymentStatus,
+    paymentMode: paymentMode || existing.paymentMode,
+    calledAt: newStatus === 'IN_CONSULTATION' && !existing.calledAt ? now : existing.calledAt,
+    completedAt: newStatus === 'COMPLETED' ? now : existing.completedAt,
+    updatedAt: now
+  };
+
+  const updatedAppointments = [...currentState.appointments];
+  updatedAppointments[aptIndex] = updated;
+
+  const nextState: InventoryState = {
+    ...currentState,
+    appointments: updatedAppointments
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, appointment: updated };
+}
+
+/**
+ * Records or updates clinical vitals for an appointment.
+ */
+export function updateAppointmentVitals(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  appointmentId: string,
+  vitals: PatientVitals
+): { nextState: InventoryState; appointment: DoctorAppointment } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const aptIndex = (currentState.appointments || []).findIndex(
+    (a) => a.id === appointmentId && a.pharmacyId === pharmacyId
+  );
+
+  if (aptIndex === -1) {
+    throw new Error(`Appointment with ID "${appointmentId}" not found for this pharmacy.`);
+  }
+
+  const existing = currentState.appointments[aptIndex];
+  const updated: DoctorAppointment = {
+    ...existing,
+    vitals: {
+      ...existing.vitals,
+      ...vitals,
+      recordedAt: new Date().toISOString()
+    },
+    updatedAt: new Date().toISOString()
+  };
+
+  const updatedAppointments = [...currentState.appointments];
+  updatedAppointments[aptIndex] = updated;
+
+  const nextState: InventoryState = {
+    ...currentState,
+    appointments: updatedAppointments
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, appointment: updated };
+}
+
+/**
+ * Links a newly generated E-Prescription to an appointment and marks it completed.
+ */
+export function linkPrescriptionToAppointment(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  appointmentId: string,
+  prescriptionId: string
+): { nextState: InventoryState; appointment: DoctorAppointment } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const aptIndex = (currentState.appointments || []).findIndex(
+    (a) => a.id === appointmentId && a.pharmacyId === pharmacyId
+  );
+
+  if (aptIndex === -1) {
+    throw new Error(`Appointment with ID "${appointmentId}" not found for this pharmacy.`);
+  }
+
+  const existing = currentState.appointments[aptIndex];
+  const updated: DoctorAppointment = {
+    ...existing,
+    prescriptionId,
+    status: 'COMPLETED',
+    completedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const updatedAppointments = [...currentState.appointments];
+  updatedAppointments[aptIndex] = updated;
+
+  const nextState: InventoryState = {
+    ...currentState,
+    appointments: updatedAppointments
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, appointment: updated };
+}
+
+/**
+ * Deletes an appointment safely within tenant boundaries.
+ */
+export function deleteAppointment(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  appointmentId: string
+): InventoryState {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const exists = (currentState.appointments || []).some(
+    (a) => a.id === appointmentId && a.pharmacyId === pharmacyId
+  );
+
+  if (!exists) {
+    throw new Error(`Appointment with ID "${appointmentId}" not found for this pharmacy.`);
+  }
+
+  const nextState: InventoryState = {
+    ...currentState,
+    appointments: currentState.appointments.filter((a) => a.id !== appointmentId || a.pharmacyId !== pharmacyId)
+  };
+
+  saveDemoInventory(nextState);
+  return nextState;
+}
+
+/**
+ * Saves or updates a doctor's weekly consultation schedule.
+ */
+export function saveDoctorSchedule(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  schedule: Omit<DoctorScheduleSlot, 'id' | 'pharmacyId'> & { id?: string }
+): { nextState: InventoryState; schedule: DoctorScheduleSlot } {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const existingSchedules = currentState.doctorSchedules || [];
+
+  let savedSlot: DoctorScheduleSlot;
+  let updatedSchedules: DoctorScheduleSlot[];
+
+  if (schedule.id) {
+    const idx = existingSchedules.findIndex((s) => s.id === schedule.id && s.pharmacyId === pharmacyId);
+    if (idx === -1) {
+      throw new Error(`Schedule with ID "${schedule.id}" not found.`);
+    }
+    savedSlot = {
+      ...existingSchedules[idx],
+      ...schedule,
+      id: schedule.id,
+      pharmacyId
+    };
+    updatedSchedules = [...existingSchedules];
+    updatedSchedules[idx] = savedSlot;
+  } else {
+    savedSlot = {
+      ...schedule,
+      id: `sched-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      pharmacyId
+    };
+    updatedSchedules = [...existingSchedules, savedSlot];
+  }
+
+  const nextState: InventoryState = {
+    ...currentState,
+    doctorSchedules: updatedSchedules
+  };
+
+  saveDemoInventory(nextState);
+  return { nextState, schedule: savedSlot };
+}
+
+/**
+ * Deletes a doctor schedule slot.
+ */
+export function deleteDoctorSchedule(
+  currentState: InventoryState,
+  requestedPharmacyId: string | undefined,
+  scheduleId: string
+): InventoryState {
+  const pharmacyId = resolvePharmacyId(currentState, requestedPharmacyId);
+  const nextState: InventoryState = {
+    ...currentState,
+    doctorSchedules: (currentState.doctorSchedules || []).filter(
+      (s) => s.id !== scheduleId || s.pharmacyId !== pharmacyId
+    )
+  };
+
   saveDemoInventory(nextState);
   return nextState;
 }

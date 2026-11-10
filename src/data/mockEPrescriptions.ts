@@ -3,7 +3,7 @@ import { Doctor, EPrescription } from '../types/eprescription';
 export const MOCK_DOCTORS: Doctor[] = [
   {
     id: 'doc-1',
-    pharmacyId: 'pharmacy-1',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Dr. Nathuram Dhankar',
     mobile: '+91 98321 45678',
     email: 'dr.dhankar@nandanmedical.in',
@@ -18,7 +18,7 @@ export const MOCK_DOCTORS: Doctor[] = [
   },
   {
     id: 'doc-2',
-    pharmacyId: 'pharmacy-1',
+    pharmacyId: 'pharm-nandan-kolkata',
     name: 'Dr. Ananya Roy',
     mobile: '+91 98451 23456',
     email: 'dr.ananya@medi5health.org',
@@ -33,7 +33,7 @@ export const MOCK_DOCTORS: Doctor[] = [
   },
   {
     id: 'doc-3',
-    pharmacyId: 'pharmacy-2',
+    pharmacyId: 'pharm-deshbandhu-siliguri',
     name: 'Dr. Rajesh Mukherjee',
     mobile: '+91 98111 22334',
     email: 'dr.rajesh@apolloclinic.com',
@@ -51,7 +51,7 @@ export const MOCK_DOCTORS: Doctor[] = [
 export const MOCK_E_PRESCRIPTIONS: EPrescription[] = [
   {
     id: 'epresc-nix-1',
-    pharmacyId: 'pharmacy-1',
+    pharmacyId: 'pharm-nandan-kolkata',
     referenceNumber: 'NAN-EP-20261103-1175',
     generatedAt: '2026-11-03T16:09:00Z',
     generatedBy: 'Dr. Nathuram Dhankar',
@@ -111,7 +111,7 @@ export const MOCK_E_PRESCRIPTIONS: EPrescription[] = [
   },
   {
     id: 'epresc-aarav-2',
-    pharmacyId: 'pharmacy-1',
+    pharmacyId: 'pharm-nandan-kolkata',
     referenceNumber: 'NAN-EP-20261105-2401',
     generatedAt: '2026-11-05T11:30:00Z',
     generatedBy: 'Dr. Nathuram Dhankar',
@@ -184,7 +184,7 @@ export const MOCK_E_PRESCRIPTIONS: EPrescription[] = [
   },
   {
     id: 'epresc-priya-3',
-    pharmacyId: 'pharmacy-1',
+    pharmacyId: 'pharm-nandan-kolkata',
     referenceNumber: 'NAN-EP-20261104-3890',
     generatedAt: '2026-11-04T14:15:00Z',
     generatedBy: 'Dr. Ananya Roy',

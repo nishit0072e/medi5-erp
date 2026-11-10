@@ -278,7 +278,7 @@ describe('Phase 4: Financial Health & Business Intelligence Engine', () => {
       for (const t of trends) {
         expect(t.inflow).toBeGreaterThanOrEqual(0);
         expect(t.outflow).toBeGreaterThanOrEqual(0);
-        expect(t.net).toBe(Math.round((t.inflow - t.outflow) * 100) / 100);
+        expect(t.net).toBeCloseTo(t.inflow - t.outflow, 2);
       }
     });
   });

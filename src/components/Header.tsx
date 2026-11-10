@@ -15,6 +15,7 @@ import {
   BarChart2,
   Stethoscope,
   FileText,
+  Calendar,
   Wifi,
   WifiOff,
   ShieldCheck
@@ -24,14 +25,15 @@ import { AuthUser } from '../types/pharmacy';
 interface HeaderProps {
   pharmacyName?: string;
   location?: string;
-  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner';
-  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner') => void;
+  activeView: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner' | 'appointments';
+  onViewChange: (view: 'inventory' | 'pos' | 'ledger' | 'patients' | 'analytics' | 'settings' | 'doctor-corner' | 'opd-corner' | 'appointments') => void;
   onOpenReceive: () => void;
   onResetDemo: () => void;
   ledgerCount: number;
   salesCount?: number;
   patientsCount?: number;
   refillsDueCount?: number;
+  appointmentsCount?: number;
   currentUser?: AuthUser;
   onLogout?: () => void;
   isSuperAdminInspecting?: boolean;
@@ -49,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   salesCount = 0,
   patientsCount = 0,
   refillsDueCount = 0,
+  appointmentsCount = 0,
   currentUser,
   onLogout,
   isSuperAdminInspecting = false,
@@ -71,13 +74,13 @@ export const Header: React.FC<HeaderProps> = ({
   const canAccessTab = (tab: HeaderProps['activeView']) => {
     if (userRole === 'SUPER_ADMIN' || userRole === 'OWNER') return true;
     if (userRole === 'DOCTOR') {
-      return tab === 'doctor-corner' || tab === 'patients' || tab === 'opd-corner';
+      return tab === 'doctor-corner' || tab === 'appointments' || tab === 'patients' || tab === 'opd-corner';
     }
     if (userRole === 'STAFF') {
-      return tab === 'pos' || tab === 'opd-corner' || tab === 'inventory' || tab === 'patients';
+      return tab === 'pos' || tab === 'appointments' || tab === 'opd-corner' || tab === 'inventory' || tab === 'patients';
     }
     if (userRole === 'MANAGER') {
-      return tab === 'inventory' || tab === 'pos' || tab === 'opd-corner' || tab === 'ledger' || tab === 'patients' || tab === 'settings';
+      return tab === 'inventory' || tab === 'pos' || tab === 'appointments' || tab === 'opd-corner' || tab === 'ledger' || tab === 'patients' || tab === 'settings';
     }
     return true;
   };
@@ -284,6 +287,22 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <BarChart2 size={15} />
               <span title="Financial Health & Leakage Analytics">Analytics</span>
+            </button>
+          )}
+
+          {canAccessTab('appointments') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'appointments'}
+              className={`view-tab-btn ${activeView === 'appointments' ? 'active' : ''}`}
+              onClick={() => onViewChange('appointments')}
+            >
+              <Calendar size={15} />
+              <span title="Doctor Appointments & Chamber Queue">Appointments</span>
+              {typeof appointmentsCount === 'number' && appointmentsCount > 0 && (
+                <span className="badge-alert-count">{appointmentsCount}</span>
+              )}
             </button>
           )}
 

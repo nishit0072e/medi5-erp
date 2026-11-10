@@ -9022,3 +9022,175 @@ a:focus-visible {
     align-items: stretch;
   }
 }
+
+/* ============================================================================
+   PHASE 6: DOCTOR APPOINTMENTS & CHAMBER MANAGEMENT STYLES
+   ============================================================================ */
+
+.appointments-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.appointment-queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+.appointment-card {
+  position: relative;
+  background: var(--card-white);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.appointment-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.appointment-card.card-in-chamber {
+  border-color: #10B981;
+  border-left: 5px solid #10B981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.04) 0%, #FFFFFF 100%);
+}
+
+.appointment-card.card-waiting {
+  border-left: 5px solid #F59E0B;
+}
+
+.token-badge-large {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--primary-green) 0%, var(--primary-green-dark) 100%);
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(19, 99, 75, 0.25);
+  letter-spacing: -0.02em;
+}
+
+.card-in-chamber .token-badge-large {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+
+.pulse-indicator {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10B981;
+  margin-right: 5px;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: pulse-ring 1.8s infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+.urgency-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.02em;
+}
+
+.urgency-badge.urgency-urgent {
+  background-color: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FCA5A5;
+}
+
+.urgency-badge.urgency-senior {
+  background-color: #EDE9FE;
+  color: #7C3AED;
+  border: 1px solid #DDD6FE;
+}
+
+.badge-payment {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-payment.paid {
+  background-color: #D1FAE5;
+  color: #065F46;
+}
+
+.badge-payment.pending {
+  background-color: #FEF3C7;
+  color: #92400E;
+}
+
+.badge-payment.waived {
+  background-color: #F3F4F6;
+  color: #4B5563;
+}
+
+.btn-action-call {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background-color: #10B981;
+  color: #FFFFFF;
+  border: none;
+  font-weight: 700;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+.btn-action-call:hover {
+  background-color: #059669;
+}
+
+.btn-pay-quick {
+  background: none;
+  border: 1px solid #10B981;
+  color: #065F46;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-pay-quick:hover {
+  background-color: #D1FAE5;
+}
